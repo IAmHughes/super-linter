@@ -1,11 +1,65 @@
-#!/bin/bash
-# shellcheck disable=SC1003,SC2016
+#!/usr/bin/env bash
 
 ################################################################################
 ################################################################################
-########### Super-Linter (Lint all the code) @AdmiralAwkbar ####################
+########### Super-Linter (Lint all the code) @admiralawkbar ####################
 ################################################################################
 ################################################################################
+
+##################################################################
+# Debug Vars                                                     #
+# Define these early, so we can use debug logging ASAP if needed #
+##################################################################
+# RUN_LOCAL="${RUN_LOCAL}"                            # Boolean to see if we are running locally
+ACTIONS_RUNNER_DEBUG="${ACTIONS_RUNNER_DEBUG:-false}" # Boolean to see even more info (debug)
+IMAGE="${IMAGE:-standard}"                            # Version of the Super-linter (standard,slim,etc)
+
+##################################################################
+# Log Vars                                                       #
+# Define these early, so we can use debug logging ASAP if needed #
+##################################################################
+LOG_FILE="${LOG_FILE:-super-linter.log}" # Default log file name (located in GITHUB_WORKSPACE folder)
+LOG_LEVEL="${LOG_LEVEL:-VERBOSE}"        # Default log level (VERBOSE, DEBUG, TRACE)
+
+if [[ ${ACTIONS_RUNNER_DEBUG} == true ]]; then LOG_LEVEL="DEBUG"; fi
+# Boolean to see trace logs
+LOG_TRACE=$(if [[ ${LOG_LEVEL} == "TRACE" ]]; then echo "true"; fi)
+export LOG_TRACE
+# Boolean to see debug logs
+LOG_DEBUG=$(if [[ ${LOG_LEVEL} == "DEBUG" || ${LOG_LEVEL} == "TRACE" ]]; then echo "true"; fi)
+export LOG_DEBUG
+# Boolean to see verbose logs (info function)
+LOG_VERBOSE=$(if [[ ${LOG_LEVEL} == "VERBOSE" || ${LOG_LEVEL} == "DEBUG" || ${LOG_LEVEL} == "TRACE" ]]; then echo "true"; fi)
+export LOG_VERBOSE
+# Boolean to see notice logs
+LOG_NOTICE=$(if [[ ${LOG_LEVEL} == "NOTICE" || ${LOG_LEVEL} == "VERBOSE" || ${LOG_LEVEL} == "DEBUG" || ${LOG_LEVEL} == "TRACE" ]]; then echo "true"; fi)
+export LOG_NOTICE
+# Boolean to see warn logs
+LOG_WARN=$(if [[ ${LOG_LEVEL} == "WARN" || ${LOG_LEVEL} == "NOTICE" || ${LOG_LEVEL} == "VERBOSE" || ${LOG_LEVEL} == "DEBUG" || ${LOG_LEVEL} == "TRACE" ]]; then echo "true"; fi)
+export LOG_WARN
+# Boolean to see error logs
+LOG_ERROR=$(if [[ ${LOG_LEVEL} == "ERROR" || ${LOG_LEVEL} == "WARN" || ${LOG_LEVEL} == "NOTICE" || ${LOG_LEVEL} == "VERBOSE" || ${LOG_LEVEL} == "DEBUG" || ${LOG_LEVEL} == "TRACE" ]]; then echo "true"; fi)
+export LOG_ERROR
+
+#########################
+# Source Function Files #
+#########################
+# shellcheck source=/dev/null
+source /action/lib/functions/buildFileList.sh # Source the function script(s)
+# shellcheck source=/dev/null
+source /action/lib/functions/detectFiles.sh # Source the function script(s)
+# shellcheck source=/dev/null
+source /action/lib/functions/linterRules.sh # Source the function script(s)
+# shellcheck source=/dev/null
+source /action/lib/functions/linterVersions.sh # Source the function script(s)
+# shellcheck source=/dev/null
+source /action/lib/functions/log.sh # Source the function script(s)
+# shellcheck source=/dev/null
+source /action/lib/functions/updateSSL.sh # Source the function script(s)
+# shellcheck source=/dev/null
+source /action/lib/functions/validation.sh # Source the function script(s)
+# shellcheck source=/dev/null
+source /action/lib/functions/worker.sh # Source the function script(s)
 
 ###########
 # GLOBALS #
@@ -13,646 +67,392 @@
 # Default Vars
 DEFAULT_RULES_LOCATION='/action/lib/.automation'                    # Default rules files location
 LINTER_RULES_PATH="${LINTER_RULES_PATH:-.github/linters}"           # Linter Path Directory
-# YAML Vars
-YAML_FILE_NAME='.yaml-lint.yml'                                     # Name of the file
-YAML_LINTER_RULES="$DEFAULT_RULES_LOCATION/$YAML_FILE_NAME"         # Path to the yaml lint rules
-# MD Vars
-MD_FILE_NAME='.markdown-lint.yml'                                   # Name of the file
-MD_LINTER_RULES="$DEFAULT_RULES_LOCATION/$MD_FILE_NAME"             # Path to the markdown lint rules
-# Python Vars
-PYTHON_FILE_NAME='.python-lint'                                     # Name of the file
-PYTHON_LINTER_RULES="$DEFAULT_RULES_LOCATION/$PYTHON_FILE_NAME"     # Path to the python lint rules
-# Ruby Vars
-RUBY_FILE_NAME='.ruby-lint.yml'                                     # Name of the file
-RUBY_LINTER_RULES="$DEFAULT_RULES_LOCATION/$RUBY_FILE_NAME"         # Path to the ruby lint rules
-# Coffee Vars
-COFFEE_FILE_NAME='.coffee-lint.json'                                  # Name of the file
-COFFEESCRIPT_LINTER_RULES="$DEFAULT_RULES_LOCATION/$COFFEE_FILE_NAME" # Path to the coffescript lint rules
-# Javascript Vars
-JAVASCRIPT_FILE_NAME='.eslintrc.yml'                                    # Name of the file
-JAVASCRIPT_LINTER_RULES="$DEFAULT_RULES_LOCATION/$JAVASCRIPT_FILE_NAME" # Path to the Javascript lint rules
-JAVASCRIPT_STANDARD_LINTER_RULES=''                                     # ENV string to pass when running js standard
-# Typescript Vars
-TYPESCRIPT_FILE_NAME='.eslintrc.yml'                                    # Name of the file
-TYPESCRIPT_LINTER_RULES="$DEFAULT_RULES_LOCATION/$TYPESCRIPT_FILE_NAME" # Path to the Typescript lint rules
-TYPESCRIPT_STANDARD_LINTER_RULES=''                                     # ENV string to pass when running js standard
-# Ansible Vars
-ANSIBLE_FILE_NAME='.ansible-lint.yml'                               # Name of the file
-ANSIBLE_LINTER_RULES="$DEFAULT_RULES_LOCATION/$ANSIBLE_FILE_NAME"   # Path to the Ansible lint rules
-# Docker Vars
-DOCKER_FILE_NAME='.dockerfilelintrc'                                # Name of the file
-DOCKER_LINTER_RULES="$DEFAULT_RULES_LOCATION/$DOCKER_FILE_NAME"     # Path to the Docker lint rules
-# Golang Vars
-GO_FILE_NAME='.golangci.yml'                                        # Name of the file
-GO_LINTER_RULES="$DEFAULT_RULES_LOCATION/$GO_FILE_NAME"             # Path to the Go lint rules
-# Terraform Vars
-TERRAFORM_FILE_NAME='.tflint.hcl'                                        # Name of the file
-TERRAFORM_LINTER_RULES="$DEFAULT_RULES_LOCATION/$TERRAFORM_FILE_NAME"    # Path to the Terraform lint rules
-# Powershell Vars
-POWERSHELL_FILE_NAME='.powershell-psscriptanalyzer.psd1'                   # Name of the file
-POWERSHELL_LINTER_RULES="$DEFAULT_RULES_LOCATION/$POWERSHELL_FILE_NAME"    # Path to the Powershell lint rules
-# CSS Vars
-CSS_FILE_NAME='.stylelintrc.json'                                   # Name of the file
-CSS_LINTER_RULES="$DEFAULT_RULES_LOCATION/$CSS_FILE_NAME"           # Path to the CSS lint rules
+GITHUB_API_URL="${GITHUB_CUSTOM_API_URL:-"https://api.github.com"}" # GitHub API root url
+VERSION_FILE='/action/lib/functions/linterVersions.txt'             # File to store linter versions
+export VERSION_FILE                                                 # Workaround SC2034
 
-#######################################
-# Linter array for information prints #
-#######################################
-LINTER_ARRAY=("jsonlint" "yamllint" "xmllint" "markdownlint" "shellcheck"
-  "pylint" "perl" "rubocop" "coffeelint" "eslint" "standard"
-  "ansible-lint" "/dockerfilelint/bin/dockerfilelint" "golangci-lint" "tflint"
-  "stylelint" "dotenv-linter" "powershell" "ktlint")
+###############
+# Rules files #
+###############
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+ANSIBLE_FILE_NAME="${ANSIBLE_CONFIG_FILE:-.ansible-lint.yml}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+ARM_FILE_NAME=".arm-ttk.psd1"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+CLOJURE_FILE_NAME=".clj-kondo/config.edn"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+CLOUDFORMATION_FILE_NAME=".cfnlintrc.yml"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+COFFEESCRIPT_FILE_NAME=".coffee-lint.json"
+CSS_FILE_NAME="${CSS_FILE_NAME:-.stylelintrc.json}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+DART_FILE_NAME="analysis_options.yml"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+DOCKERFILE_FILE_NAME=".dockerfilelintrc"
+DOCKERFILE_HADOLINT_FILE_NAME="${DOCKERFILE_HADOLINT_FILE_NAME:-.hadolint.yaml}"
+EDITORCONFIG_FILE_NAME="${EDITORCONFIG_FILE_NAME:-.ecrc}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+GHERKIN_FILE_NAME=".gherkin-lintrc"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+GO_FILE_NAME=".golangci.yml"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+GROOVY_FILE_NAME=".groovylintrc.json"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+HTML_FILE_NAME=".htmlhintrc"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+JAVA_FILE_NAME="sun_checks.xml"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+JAVASCRIPT_ES_FILE_NAME="${JAVASCRIPT_ES_CONFIG_FILE:-.eslintrc.yml}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+JAVASCRIPT_DEFAULT_STYLE="${JAVASCRIPT_DEFAULT_STYLE:-standard}"
+JAVASCRIPT_STYLE_NAME='' # Variable for the style
+JAVASCRIPT_STYLE=''      # Variable for the style
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+JAVASCRIPT_STANDARD_FILE_NAME="${JAVASCRIPT_ES_CONFIG_FILE:-.eslintrc.yml}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+JSCPD_FILE_NAME="${JSCPD_CONFIG_FILE:-.jscpd.json}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+JSX_FILE_NAME="${JAVASCRIPT_ES_CONFIG_FILE:-.eslintrc.yml}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+KUBERNETES_KUBEVAL_OPTIONS="${KUBERNETES_KUBEVAL_OPTIONS:-null}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+LATEX_FILE_NAME=".chktexrc"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+LUA_FILE_NAME=".luacheckrc"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+MARKDOWN_FILE_NAME="${MARKDOWN_CONFIG_FILE:-.markdown-lint.yml}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+OPENAPI_FILE_NAME=".openapirc.yml"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+PHP_BUILTIN_FILE_NAME="${PHP_CONFIG_FILE:-php.ini}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+PHP_PHPCS_FILE_NAME="phpcs.xml"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+PHP_PHPSTAN_FILE_NAME="phpstan.neon"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+PHP_PSALM_FILE_NAME="psalm.xml"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+POWERSHELL_FILE_NAME=".powershell-psscriptanalyzer.psd1"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+PROTOBUF_FILE_NAME=".protolintrc.yml"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+PYTHON_BLACK_FILE_NAME="${PYTHON_BLACK_CONFIG_FILE:-.python-black}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+PYTHON_FLAKE8_FILE_NAME="${PYTHON_FLAKE8_CONFIG_FILE:-.flake8}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+PYTHON_ISORT_FILE_NAME="${PYTHON_ISORT_CONFIG_FILE:-.isort.cfg}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+PYTHON_MYPY_FILE_NAME="${PYTHON_MYPY_CONFIG_FILE:-.mypy.ini}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+PYTHON_PYLINT_FILE_NAME="${PYTHON_PYLINT_CONFIG_FILE:-.python-lint}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+R_FILE_NAME=".lintr"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+RUBY_FILE_NAME="${RUBY_CONFIG_FILE:-.ruby-lint.yml}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+SNAKEMAKE_SNAKEFMT_FILE_NAME="${SNAKEMAKE_SNAKEFMT_CONFIG_FILE:-.snakefmt.toml}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+SUPPRESS_POSSUM="${SUPPRESS_POSSUM:-false}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+# SSL_CERT_SECRET="${SSL_CERT_SECRET}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+SQL_FILE_NAME="${SQL_CONFIG_FILE:-.sql-config.json}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+TERRAFORM_FILE_NAME=".tflint.hcl"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+TSX_FILE_NAME="${TYPESCRIPT_ES_CONFIG_FILE:-.eslintrc.yml}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+TYPESCRIPT_ES_FILE_NAME="${TYPESCRIPT_ES_CONFIG_FILE:-.eslintrc.yml}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+TYPESCRIPT_STANDARD_FILE_NAME="${TYPESCRIPT_ES_CONFIG_FILE:-.eslintrc.yml}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+USE_FIND_ALGORITHM="${USE_FIND_ALGORITHM:-false}"
+# shellcheck disable=SC2034  # Variable is referenced indirectly
+YAML_FILE_NAME="${YAML_CONFIG_FILE:-.yaml-lint.yml}"
 
-#############################
-# Language array for prints #
-#############################
-LANGUAGE_ARRAY=('YML' 'JSON' 'XML' 'MARKDOWN' 'BASH' 'PERL' 'PHP' 'RUBY' 'PYTHON'
-  'COFFEESCRIPT' 'ANSIBLE' 'JAVASCRIPT_STANDARD' 'JAVASCRIPT_ES'
-  'TYPESCRIPT_STANDARD' 'TYPESCRIPT_ES' 'DOCKER' 'GO' 'TERRAFORM'
-  'ENV' 'POWERSHELL' 'KOTLIN')
+#################################################
+# Parse if we are using JS standard or prettier #
+#################################################
+# Remove spaces
+JAVASCRIPT_DEFAULT_STYLE=$(echo "${JAVASCRIPT_DEFAULT_STYLE}" | tr -d ' ')
+# lowercase
+JAVASCRIPT_DEFAULT_STYLE=$(echo "${JAVASCRIPT_DEFAULT_STYLE}" | tr '[:upper:]' '[:lower:]')
+# Check and set
+if [ "${JAVASCRIPT_DEFAULT_STYLE}" == "prettier" ]; then
+  # Set to prettier
+  JAVASCRIPT_STYLE_NAME='JAVASCRIPT_PRETTIER'
+  JAVASCRIPT_STYLE='prettier'
+else
+  # Default to standard
+  JAVASCRIPT_STYLE_NAME='JAVASCRIPT_STANDARD'
+  JAVASCRIPT_STYLE='standard'
+fi
+
+##################
+# Language array #
+##################
+LANGUAGE_ARRAY=('ANSIBLE' 'ARM' 'BASH' 'BASH_EXEC' 'CLOUDFORMATION' 'CLOJURE' 'COFFEESCRIPT' 'CPP' 'CSHARP' 'CSS'
+  'DART' 'DOCKERFILE' 'DOCKERFILE_HADOLINT' 'EDITORCONFIG' 'ENV' 'GHERKIN' 'GO' 'GROOVY' 'HTML'
+  'JAVA' 'JAVASCRIPT_ES' "${JAVASCRIPT_STYLE_NAME}" 'JSCPD' 'JSON' 'JSONC' 'JSX' 'KUBERNETES_KUBEVAL' 'KOTLIN' 'LATEX' 'LUA' 'MARKDOWN'
+  'OPENAPI' 'PERL' 'PHP_BUILTIN' 'PHP_PHPCS' 'PHP_PHPSTAN' 'PHP_PSALM' 'POWERSHELL'
+  'PROTOBUF' 'PYTHON_BLACK' 'PYTHON_PYLINT' 'PYTHON_FLAKE8' 'PYTHON_ISORT' 'PYTHON_MYPY'
+  'R' 'RAKU' 'RUBY' 'RUST_2015' 'RUST_2018' 'RUST_CLIPPY'
+  'SHELL_SHFMT' 'SNAKEMAKE_LINT' 'SNAKEMAKE_SNAKEFMT' 'STATES' 'SQL'
+  'TEKTON' 'TERRAFORM' 'TERRAFORM_TERRASCAN' 'TERRAGRUNT' 'TSX' 'TYPESCRIPT_ES' 'TYPESCRIPT_STANDARD' 'XML' 'YAML')
+
+##############################
+# Linter command names array #
+##############################
+declare -A LINTER_NAMES_ARRAY
+LINTER_NAMES_ARRAY['ANSIBLE']="ansible-lint"
+LINTER_NAMES_ARRAY['ARM']="arm-ttk"
+LINTER_NAMES_ARRAY['BASH']="shellcheck"
+LINTER_NAMES_ARRAY['BASH_EXEC']="bash-exec"
+LINTER_NAMES_ARRAY['CLOJURE']="clj-kondo"
+LINTER_NAMES_ARRAY['CLOUDFORMATION']="cfn-lint"
+LINTER_NAMES_ARRAY['COFFEESCRIPT']="coffeelint"
+LINTER_NAMES_ARRAY['CPP']="cpplint"
+LINTER_NAMES_ARRAY['CSHARP']="dotnet-format"
+LINTER_NAMES_ARRAY['CSS']="stylelint"
+LINTER_NAMES_ARRAY['DART']="dart"
+LINTER_NAMES_ARRAY['DOCKERFILE']="dockerfilelint"
+LINTER_NAMES_ARRAY['DOCKERFILE_HADOLINT']="hadolint"
+LINTER_NAMES_ARRAY['EDITORCONFIG']="editorconfig-checker"
+LINTER_NAMES_ARRAY['ENV']="dotenv-linter"
+LINTER_NAMES_ARRAY['GHERKIN']="gherkin-lint"
+LINTER_NAMES_ARRAY['GO']="golangci-lint"
+LINTER_NAMES_ARRAY['GROOVY']="npm-groovy-lint"
+LINTER_NAMES_ARRAY['HTML']="htmlhint"
+LINTER_NAMES_ARRAY['JAVA']="checkstyle"
+LINTER_NAMES_ARRAY['JAVASCRIPT_ES']="eslint"
+LINTER_NAMES_ARRAY["${JAVASCRIPT_STYLE_NAME}"]="${JAVASCRIPT_STYLE}"
+LINTER_NAMES_ARRAY['JSCPD']="jscpd"
+LINTER_NAMES_ARRAY['JSON']="jsonlint"
+LINTER_NAMES_ARRAY['JSONC']="eslint"
+LINTER_NAMES_ARRAY['JSX']="eslint"
+LINTER_NAMES_ARRAY['KOTLIN']="ktlint"
+LINTER_NAMES_ARRAY['KUBERNETES_KUBEVAL']="kubeval"
+LINTER_NAMES_ARRAY['LATEX']="chktex"
+LINTER_NAMES_ARRAY['LUA']="lua"
+LINTER_NAMES_ARRAY['MARKDOWN']="markdownlint"
+LINTER_NAMES_ARRAY['OPENAPI']="spectral"
+LINTER_NAMES_ARRAY['PERL']="perl"
+LINTER_NAMES_ARRAY['PHP_BUILTIN']="php"
+LINTER_NAMES_ARRAY['PHP_PHPCS']="phpcs"
+LINTER_NAMES_ARRAY['PHP_PHPSTAN']="phpstan"
+LINTER_NAMES_ARRAY['PHP_PSALM']="psalm"
+LINTER_NAMES_ARRAY['POWERSHELL']="pwsh"
+LINTER_NAMES_ARRAY['PROTOBUF']="protolint"
+LINTER_NAMES_ARRAY['PYTHON_BLACK']="black"
+LINTER_NAMES_ARRAY['PYTHON_PYLINT']="pylint"
+LINTER_NAMES_ARRAY['PYTHON_FLAKE8']="flake8"
+LINTER_NAMES_ARRAY['PYTHON_ISORT']="isort"
+LINTER_NAMES_ARRAY['PYTHON_MYPY']="mypy"
+LINTER_NAMES_ARRAY['R']="R"
+LINTER_NAMES_ARRAY['RAKU']="raku"
+LINTER_NAMES_ARRAY['RUBY']="rubocop"
+LINTER_NAMES_ARRAY['RUST_2015']="rustfmt"
+LINTER_NAMES_ARRAY['RUST_2018']="rustfmt"
+LINTER_NAMES_ARRAY['RUST_CLIPPY']="clippy"
+LINTER_NAMES_ARRAY['SHELL_SHFMT']="shfmt"
+LINTER_NAMES_ARRAY['SNAKEMAKE_LINT']="snakemake"
+LINTER_NAMES_ARRAY['SNAKEMAKE_SNAKEFMT']="snakefmt"
+LINTER_NAMES_ARRAY['STATES']="asl-validator"
+LINTER_NAMES_ARRAY['SQL']="sql-lint"
+LINTER_NAMES_ARRAY['TEKTON']="tekton-lint"
+LINTER_NAMES_ARRAY['TERRAFORM']="tflint"
+LINTER_NAMES_ARRAY['TERRAFORM_TERRASCAN']="terrascan"
+LINTER_NAMES_ARRAY['TERRAGRUNT']="terragrunt"
+LINTER_NAMES_ARRAY['TSX']="eslint"
+LINTER_NAMES_ARRAY['TYPESCRIPT_ES']="eslint"
+LINTER_NAMES_ARRAY['TYPESCRIPT_STANDARD']="standard"
+LINTER_NAMES_ARRAY['XML']="xmllint"
+LINTER_NAMES_ARRAY['YAML']="yamllint"
+
+############################################
+# Array for all languages that were linted #
+############################################
+LINTED_LANGUAGES_ARRAY=() # Will be filled at run time with all languages that were linted
 
 ###################
 # GitHub ENV Vars #
 ###################
-GITHUB_SHA="${GITHUB_SHA}"                            # GitHub sha from the commit
-GITHUB_EVENT_PATH="${GITHUB_EVENT_PATH}"              # Github Event Path
-GITHUB_WORKSPACE="${GITHUB_WORKSPACE}"                # Github Workspace
-DEFAULT_BRANCH="${DEFAULT_BRANCH:-master}"            # Default Git Branch to use (master by default)
-ANSIBLE_DIRECTORY="${ANSIBLE_DIRECTORY}"              # Ansible Directory
-VALIDATE_ALL_CODEBASE="${VALIDATE_ALL_CODEBASE}"      # Boolean to validate all files
-VALIDATE_YAML="${VALIDATE_YAML}"                      # Boolean to validate language
-VALIDATE_JSON="${VALIDATE_JSON}"                      # Boolean to validate language
-VALIDATE_XML="${VALIDATE_XML}"                        # Boolean to validate language
-VALIDATE_MD="${VALIDATE_MD}"                          # Boolean to validate language
-VALIDATE_BASH="${VALIDATE_BASH}"                      # Boolean to validate language
-VALIDATE_PERL="${VALIDATE_PERL}"                      # Boolean to validate language
-VALIDATE_PHP="${VALIDATE_PHP}"                        # Boolean to validate language
-VALIDATE_PYTHON="${VALIDATE_PYTHON}"                  # Boolean to validate language
-VALIDATE_RUBY="${VALIDATE_RUBY}"                      # Boolean to validate language
-VALIDATE_COFFEE="${VALIDATE_COFFEE}"                  # Boolean to validate language
-VALIDATE_ANSIBLE="${VALIDATE_ANSIBLE}"                # Boolean to validate language
-VALIDATE_JAVASCRIPT_ES="${VALIDATE_JAVASCRIPT_ES}"              # Boolean to validate language
-VALIDATE_JAVASCRIPT_STANDARD="${VALIDATE_JAVASCRIPT_STANDARD}"  # Boolean to validate language
-VALIDATE_TYPESCRIPT_ES="${VALIDATE_TYPESCRIPT_ES}"              # Boolean to validate language
-VALIDATE_TYPESCRIPT_STANDARD="${VALIDATE_TYPESCRIPT_STANDARD}"  # Boolean to validate language
-VALIDATE_DOCKER="${VALIDATE_DOCKER}"                  # Boolean to validate language
-VALIDATE_GO="${VALIDATE_GO}"                          # Boolean to validate language
-VALIDATE_CSS="${VALIDATE_CSS}"                        # Boolean to validate language
-VALIDATE_ENV="${VALIDATE_ENV}"                        # Boolean to validate language
-VALIDATE_TERRAFORM="${VALIDATE_TERRAFORM}"            # Boolean to validate language
-VALIDATE_POWERSHELL="${VALIDATE_POWERSHELL}"          # Boolean to validate language
-VALIDATE_KOTLIN="${VALIDATE_KOTLIN}"                  # Boolean to validate language
-TEST_CASE_RUN="${TEST_CASE_RUN}"                      # Boolean to validate only test cases
-DISABLE_ERRORS="${DISABLE_ERRORS}"                    # Boolean to enable warning-only output without throwing errors
+# ANSIBLE_DIRECTORY="${ANSIBLE_DIRECTORY}"         # Ansible Directory
+MULTI_STATUS="${MULTI_STATUS:-true}"       # Multiple status are created for each check ran
+DEFAULT_BRANCH="${DEFAULT_BRANCH:-master}" # Default Git Branch to use (master by default)
+# DISABLE_ERRORS="${DISABLE_ERRORS}"               # Boolean to enable warning-only output without throwing errors
+# FILTER_REGEX_INCLUDE="${FILTER_REGEX_INCLUDE}"   # RegExp defining which files will be processed by linters (all by default)
+# FILTER_REGEX_EXCLUDE="${FILTER_REGEX_EXCLUDE}"   # RegExp defining which files will be excluded from linting (none by default)
+# GITHUB_EVENT_PATH="${GITHUB_EVENT_PATH}"         # Github Event Path
+# GITHUB_REPOSITORY="${GITHUB_REPOSITORY}"         # GitHub Org/Repo passed from system
+# GITHUB_RUN_ID="${GITHUB_RUN_ID}"                 # GitHub RUn ID to point to logs
+# GITHUB_SHA="${GITHUB_SHA}"                       # GitHub sha from the commit
+# GITHUB_TOKEN="${GITHUB_TOKEN}"                   # GitHub Token passed from environment
+# GITHUB_WORKSPACE="${GITHUB_WORKSPACE}"           # Github Workspace
+# TEST_CASE_RUN="${TEST_CASE_RUN}"                 # Boolean to validate only test cases
+# VALIDATE_ALL_CODEBASE="${VALIDATE_ALL_CODEBASE}" # Boolean to validate all files
 
-##############
-# Debug Vars #
-##############
-RUN_LOCAL="${RUN_LOCAL}"                        # Boolean to see if we are running locally
-ACTIONS_RUNNER_DEBUG="${ACTIONS_RUNNER_DEBUG}"  # Boolean to see even more info (debug)
+IGNORE_GITIGNORED_FILES="${IGNORE_GITIGNORED_FILES:-false}"
+
+# Do not ignore generated files by default for backwards compatibility
+IGNORE_GENERATED_FILES="${IGNORE_GENERATED_FILES:-false}"
 
 ################
 # Default Vars #
 ################
-DEFAULT_VALIDATE_ALL_CODEBASE='true'                  # Default value for validate all files
-DEFAULT_WORKSPACE="${DEFAULT_WORKSPACE:-/tmp/lint}"   # Default workspace if running locally
-DEFAULT_ANSIBLE_DIRECTORY="$GITHUB_WORKSPACE/ansible" # Default Ansible Directory
-DEFAULT_RUN_LOCAL='false'                             # Default value for debugging locally
-DEFAULT_TEST_CASE_RUN='false'                         # Flag to tell code to run only test cases
-DEFAULT_ACTIONS_RUNNER_DEBUG='false'                  # Default value for debugging output
-RAW_FILE_ARRAY=()                                     # Array of all files that were changed
-READ_ONLY_CHANGE_FLAG=0                               # Flag set to 1 if files changed are not txt or md
-TEST_CASE_FOLDER='.automation/test'                   # Folder for test cases we should always ignore
-DEFAULT_DISABLE_ERRORS='false'                        # Default to enabling errors
+DEFAULT_VALIDATE_ALL_CODEBASE='true'                # Default value for validate all files
+DEFAULT_WORKSPACE="${DEFAULT_WORKSPACE:-/tmp/lint}" # Default workspace if running locally
+DEFAULT_RUN_LOCAL='false'                           # Default value for debugging locally
+DEFAULT_TEST_CASE_RUN='false'                       # Flag to tell code to run only test cases
+
+###############################################################
+# Default Vars that are called in Subs and need to be ignored #
+###############################################################
+DEFAULT_DISABLE_ERRORS='false'                                  # Default to enabling errors
+export DEFAULT_DISABLE_ERRORS                                   # Workaround SC2034
+ERROR_ON_MISSING_EXEC_BIT="${ERROR_ON_MISSING_EXEC_BIT:-false}" # Default to report a warning if a shell script doesn't have the executable bit set to 1
+export ERROR_ON_MISSING_EXEC_BIT
+RAW_FILE_ARRAY=()                   # Array of all files that were changed
+export RAW_FILE_ARRAY               # Workaround SC2034
+TEST_CASE_FOLDER='.automation/test' # Folder for test cases we should always ignore
+export TEST_CASE_FOLDER             # Workaround SC2034
 
 ##########################
 # Array of changed files #
 ##########################
-FILE_ARRAY_YML=()                   # Array of files to check
-FILE_ARRAY_JSON=()                  # Array of files to check
-FILE_ARRAY_XML=()                   # Array of files to check
-FILE_ARRAY_MD=()                    # Array of files to check
-FILE_ARRAY_BASH=()                  # Array of files to check
-FILE_ARRAY_PERL=()                  # Array of files to check
-FILE_ARRAY_PHP=()                   # Array of files to check
-FILE_ARRAY_RUBY=()                  # Array of files to check
-FILE_ARRAY_PYTHON=()                # Array of files to check
-FILE_ARRAY_COFFEESCRIPT=()          # Array of files to check
-FILE_ARRAY_JAVASCRIPT_ES=()         # Array of files to check
-FILE_ARRAY_JAVASCRIPT_STANDARD=()   # Array of files to check
-FILE_ARRAY_TYPESCRIPT_ES=()         # Array of files to check
-FILE_ARRAY_TYPESCRIPT_STANDARD=()   # Array of files to check
-FILE_ARRAY_DOCKER=()                # Array of files to check
-FILE_ARRAY_GO=()                    # Array of files to check
-FILE_ARRAY_TERRAFORM=()             # Array of files to check
-FILE_ARRAY_POWERSHELL=()             # Array of files to check
-FILE_ARRAY_CSS=()                   # Array of files to check
-FILE_ARRAY_ENV=()                   # Array of files to check
-FILE_ARRAY_KOTLIN=()                # Array of files to check
-
-############
-# Counters #
-############
-ERRORS_FOUND_YML=0                  # Count of errors found
-ERRORS_FOUND_JSON=0                 # Count of errors found
-ERRORS_FOUND_XML=0                  # Count of errors found
-ERRORS_FOUND_MARKDOWN=0             # Count of errors found
-ERRORS_FOUND_BASH=0                 # Count of errors found
-ERRORS_FOUND_PERL=0                 # Count of errors found
-ERRORS_FOUND_PHP=0                  # Count of errors found
-ERRORS_FOUND_RUBY=0                 # Count of errors found
-ERRORS_FOUND_PYTHON=0               # Count of errors found
-ERRORS_FOUND_COFFEESCRIPT=0         # Count of errors found
-ERRORS_FOUND_ANSIBLE=0              # Count of errors found
-ERRORS_FOUND_JAVASCRIPT_STANDARD=0  # Count of errors found
-ERRORS_FOUND_JAVASCRIPT_ES=0        # Count of errors found
-ERRORS_FOUND_TYPESCRIPT_STANDARD=0  # Count of errors found
-ERRORS_FOUND_TYPESCRIPT_ES=0        # Count of errors found
-ERRORS_FOUND_DOCKER=0               # Count of errors found
-ERRORS_FOUND_GO=0                   # Count of errors found
-ERRORS_FOUND_TERRAFORM=0            # Count of errors found
-ERRORS_FOUND_POWERSHELL=0           # Count of errors found
-ERRORS_FOUND_CSS=0                  # Count of errors found
-ERRORS_FOUND_ENV=0                  # Count of errors found
-ERRORS_FOUND_KOTLIN=0               # Count of errors found
+for LANGUAGE in "${LANGUAGE_ARRAY[@]}"; do
+  FILE_ARRAY_VARIABLE_NAME="FILE_ARRAY_${LANGUAGE}"
+  debug "Setting ${FILE_ARRAY_VARIABLE_NAME} variable..."
+  eval "${FILE_ARRAY_VARIABLE_NAME}=()"
+done
 
 ################################################################################
 ########################## FUNCTIONS BELOW #####################################
 ################################################################################
 ################################################################################
 #### Function Header ###########################################################
-Header()
-{
+Header() {
   ###############################
   # Give them the possum action #
   ###############################
-  /bin/bash /action/lib/possum.sh
+  if [[ "${SUPPRESS_POSSUM}" == "false" ]]; then
+    /bin/bash /action/lib/functions/possum.sh
+  fi
 
   ##########
   # Prints #
   ##########
-  echo ""
-  echo "---------------------------------------------"
-  echo "--- GitHub Actions Multi Language Linter ----"
-  echo "---------------------------------------------"
-  echo ""
-  echo "---------------------------------------------"
-  echo "The Super-Linter source code can be found at:"
-  echo " - https://github.com/github/super-linter"
-  echo "---------------------------------------------"
-}
-################################################################################
-#### Function GetLinterVersions ################################################
-GetLinterVersions()
-{
-  #########################
-  # Print version headers #
-  #########################
-  echo ""
-  echo "---------------------------------------------"
-  echo "Linter Version Info:"
-  echo "---------------------------------------------"
-  echo ""
-
-  ##########################################################
-  # Go through the array of linters and print version info #
-  ##########################################################
-  for LINTER in "${LINTER_ARRAY[@]}"
-  do
-    echo "---------------------------------------------"
-    echo "[$LINTER]:"
-    ###################
-    # Get the version #
-    ###################
-    # shellcheck disable=SC2207
-    GET_VERSION_CMD=($("$LINTER" --version 2>&1))
-
-    #######################
-    # Load the error code #
-    #######################
-    ERROR_CODE=$?
-
-    ##############################
-    # Check the shell for errors #
-    ##############################
-    if [ $ERROR_CODE -ne 0 ] || [ -z "${GET_VERSION_CMD[*]}" ]; then
-      echo "WARN! Failed to get version info for:[$LINTER]"
-      echo "---------------------------------------------"
-    else
-      ##########################
-      # Print the version info #
-      ##########################
-      echo "${GET_VERSION_CMD[*]}"
-      echo "---------------------------------------------"
-    fi
-  done
-}
-################################################################################
-#### Function GetLinterRules ###################################################
-GetLinterRules()
-{
-  # Need to validate the rules files exist
-
-  ################
-  # Pull in vars #
-  ################
-  FILE_NAME="$1"      # Name fo the linter file
-  FILE_LOCATION="$2"  # Location of the linter file
-
-  #####################################
-  # Validate we have the linter rules #
-  #####################################
-  if [ -f "$GITHUB_WORKSPACE/$LINTER_RULES_PATH/$FILE_NAME" ]; then
-    echo "----------------------------------------------"
-    echo "User provided file:[$FILE_NAME], setting rules file..."
-
-    ####################################
-    # Copy users into default location #
-    ####################################
-    CP_CMD=$(cp "$GITHUB_WORKSPACE/$LINTER_RULES_PATH/$FILE_NAME" "$FILE_LOCATION" 2>&1)
-
-    ###################
-    # Load Error code #
-    ###################
-    ERROR_CODE=$?
-
-    ##############################
-    # Check the shell for errors #
-    ##############################
-    if [ $ERROR_CODE -ne 0 ]; then
-      echo "ERROR! Failed to set file:[$FILE_NAME] as default!"
-      echo "ERROR:[$CP_CMD]"
-      exit 1
-    fi
-  else
-    ########################################################
-    # No user default provided, using the template default #
-    ########################################################
-    if [[ "$ACTIONS_RUNNER_DEBUG" == "true" ]]; then
-      echo "  -> Codebase does NOT have file:[$LINTER_RULES_PATH/$FILE_NAME], using Default rules at:[$FILE_LOCATION]"
-    fi
-  fi
-}
-################################################################################
-#### Function GetStandardRules #################################################
-GetStandardRules()
-{
-  ################
-  # Pull In Vars #
-  ################
-  LINTER="$1" # Type: javascript | typescript
-
-  #########################################################################
-  # Need to get the ENV vars from the linter rules to run in command line #
-  #########################################################################
-  # Copy orig IFS to var
-  ORIG_IFS="$IFS"
-  # Set the IFS to newline
-  IFS=$'\n'
-
-  #########################################
-  # Get list of all environment variables #
-  #########################################
-  # Only env vars that are marked as true
-  GET_ENV_ARRAY=()
-  if [[ "$LINTER" == "javascript" ]]; then
-    # shellcheck disable=SC2207
-    GET_ENV_ARRAY=($(yq .env "$JAVASCRIPT_LINTER_RULES" |grep true))
-  elif [[ "$LINTER" == "typescript" ]]; then
-    # shellcheck disable=SC2207
-    GET_ENV_ARRAY=($(yq .env "$TYPESCRIPT_LINTER_RULES" |grep true))
-  fi
-
-  #######################
-  # Load the error code #
-  #######################
-  ERROR_CODE=$?
-
-  ##############################
-  # Check the shell for errors #
-  ##############################
-  if [ $ERROR_CODE -ne 0 ]; then
-    # ERROR
-    echo "ERROR! Failed to gain list of ENV vars to load!"
-    echo "ERROR:[${GET_ENV_ARRAY[*]}]"
-    exit 1
-  fi
-
-  ##########################
-  # Set IFS back to normal #
-  ##########################
-  # Set IFS back to Orig
-  IFS="$ORIG_IFS"
-
-  ######################
-  # Set the env string #
-  ######################
-  ENV_STRING=''
-
-  #############################
-  # Pull out the envs to load #
-  #############################
-  for ENV in "${GET_ENV_ARRAY[@]}"
-  do
-    #############################
-    # remove spaces from return #
-    #############################
-    ENV="$(echo -e "${ENV}" | tr -d '[:space:]')"
-    ################################
-    # Get the env to add to string #
-    ################################
-    ENV="$(echo "${ENV}" | cut -d'"' -f2)"
-    # echo "ENV:[$ENV]"
-    ENV_STRING+="--env ${ENV} "
-  done
-
-  #########################################
-  # Remove trailing and ending whitespace #
-  #########################################
-  if [[ "$LINTER" == "javascript" ]]; then
-    JAVASCRIPT_STANDARD_LINTER_RULES="$(echo -e "${ENV_STRING}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-  elif [[ "$LINTER" == "typescript" ]]; then
-    TYPESCRIPT_STANDARD_LINTER_RULES="$(echo -e "${ENV_STRING}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-  fi
-}
-################################################################################
-#### Function LintAnsibleFiles #################################################
-LintAnsibleFiles()
-{
-  ######################
-  # Create Print Array #
-  ######################
-  PRINT_ARRAY=()
-
-  ################
-  # print header #
-  ################
-  PRINT_ARRAY+=("")
-  PRINT_ARRAY+=("----------------------------------------------")
-  PRINT_ARRAY+=("----------------------------------------------")
-  PRINT_ARRAY+=("Linting [Ansible] files...")
-  PRINT_ARRAY+=("----------------------------------------------")
-  PRINT_ARRAY+=("----------------------------------------------")
-
-  ######################
-  # Name of the linter #
-  ######################
-  LINTER_NAME="ansible-lint"
-
-  ###########################################
-  # Validate we have ansible-lint installed #
-  ###########################################
-  # shellcheck disable=SC2230
-  VALIDATE_INSTALL_CMD=$(command -v "$LINTER_NAME" 2>&1)
-
-  #######################
-  # Load the error code #
-  #######################
-  ERROR_CODE=$?
-
-  ##############################
-  # Check the shell for errors #
-  ##############################
-  if [ $ERROR_CODE -ne 0 ]; then
-    # Failed
-    echo "ERROR! Failed to find $LINTER_NAME in system!"
-    echo "ERROR:[$VALIDATE_INSTALL_CMD]"
-    exit 1
-  else
-    # Success
-    if [[ "$ACTIONS_RUNNER_DEBUG" == "true" ]]; then
-      # Success
-      echo "Successfully found binary in system"
-      echo "Location:[$VALIDATE_INSTALL_CMD]"
-    fi
-  fi
-
-  ##########################
-  # Initialize empty Array #
-  ##########################
-  LIST_FILES=()
-
-  #######################
-  # Create flag to skip #
-  #######################
-  SKIP_FLAG=0
-
-  ######################################################
-  # Only go into ansible linter if we have base folder #
-  ######################################################
-  if [ -d "$ANSIBLE_DIRECTORY" ]; then
-
-    ############################################################
-    # Check to see if we need to go through array or all files #
-    ############################################################
-    if [ "$VALIDATE_ALL_CODEBASE" == "false" ]; then
-      # We need to only check the ansible playbooks that have updates
-      #LIST_FILES=("${ANSIBLE_ARRAY[@]}")
-      # shellcheck disable=SC2164,SC2010,SC2207
-      LIST_FILES=($(cd "$ANSIBLE_DIRECTORY"; ls | grep ".yml" 2>&1))
-    else
-      #################################
-      # Get list of all files to lint #
-      #################################
-      # shellcheck disable=SC2164,SC2010,SC2207
-      LIST_FILES=($(cd "$ANSIBLE_DIRECTORY"; ls | grep ".yml" 2>&1))
-    fi
-
-    ###############################################################
-    # Set the list to empty if only MD and TXT files were changed #
-    ###############################################################
-    # No need to run the full ansible checks on read only file changes
-    if [ "$READ_ONLY_CHANGE_FLAG" -eq 0 ]; then
-      ##########################
-      # Set the array to empty #
-      ##########################
-      LIST_FILES=()
-      ###################################
-      # Send message that were skipping #
-      ###################################
-      #echo "- Skipping Ansible lint run as file(s) that were modified were read only..."
-      ############################
-      # Create flag to skip loop #
-      ############################
-      SKIP_FLAG=1
-    fi
-
-    ####################################
-    # Check if we have data to look at #
-    ####################################
-    if [ $SKIP_FLAG -eq 0 ]; then
-      for LINE in "${PRINT_ARRAY[@]}"
-      do
-        #########################
-        # Print the header line #
-        #########################
-        echo "$LINE"
-      done
-    fi
-
-    ##################
-    # Lint the files #
-    ##################
-    for FILE in "${LIST_FILES[@]}"
-    do
-
-      ########################################
-      # Make sure we dont lint certain files #
-      ########################################
-      if [[ $FILE == *"vault.yml"* ]] || [[ $FILE == *"galaxy.yml"* ]]; then
-        # This is a file we dont look at
-        continue
-      fi
-
-      ####################
-      # Get the filename #
-      ####################
-      FILE_NAME=$(basename "$ANSIBLE_DIRECTORY/$FILE" 2>&1)
-
-      ##############
-      # File print #
-      ##############
-      echo "---------------------------"
-      echo "File:[$FILE]"
-
-      ################################
-      # Lint the file with the rules #
-      ################################
-      LINT_CMD=$("$LINTER_NAME" -v -c "$ANSIBLE_LINTER_RULES" "$ANSIBLE_DIRECTORY/$FILE" 2>&1)
-
-      #######################
-      # Load the error code #
-      #######################
-      ERROR_CODE=$?
-
-      ##############################
-      # Check the shell for errors #
-      ##############################
-      if [ $ERROR_CODE -ne 0 ]; then
-        #########
-        # Error #
-        #########
-        echo "ERROR! Found errors in [$LINTER_NAME] linter!"
-        echo "ERROR:[$LINT_CMD]"
-        # Increment error count
-        ((ERRORS_FOUND_ANSIBLE++))
-      else
-        ###########
-        # Success #
-        ###########
-        echo " - File:[$FILE_NAME] was linted with [$LINTER_NAME] successfully"
-      fi
-    done
-  else # No ansible directory found in path
-    ###############################
-    # Check to see if debug is on #
-    ###############################
-    if [[ "$ACTIONS_RUNNER_DEBUG" == "true" ]]; then
-      ########################
-      # No Ansible dir found #
-      ########################
-      echo "WARN! No Ansible base directory found at:[$ANSIBLE_DIRECTORY]"
-      echo "skipping ansible lint"
-    fi
-  fi
+  info "---------------------------------------------"
+  info "--- GitHub Actions Multi Language Linter ----"
+  info " - Image Creation Date:[${BUILD_DATE}]"
+  info " - Image Revision:[${BUILD_REVISION}]"
+  info " - Image Version:[${BUILD_VERSION}]"
+  info "---------------------------------------------"
+  info "---------------------------------------------"
+  info "The Super-Linter source code can be found at:"
+  info " - https://github.com/github/super-linter"
+  info "---------------------------------------------"
 }
 ################################################################################
 #### Function GetGitHubVars ####################################################
-GetGitHubVars()
-{
+GetGitHubVars() {
   ##########
   # Prints #
   ##########
-  echo "--------------------------------------------"
-  echo "Gathering GitHub information..."
+  info "--------------------------------------------"
+  info "Gathering GitHub information..."
 
   ###############################
   # Get the Run test cases flag #
   ###############################
-  if [ -z "$TEST_CASE_RUN" ]; then
+  if [ -z "${TEST_CASE_RUN}" ]; then
     ##################################
     # No flag passed, set to default #
     ##################################
-    TEST_CASE_RUN="$DEFAULT_TEST_CASE_RUN"
+    TEST_CASE_RUN="${DEFAULT_TEST_CASE_RUN}"
   fi
 
   ###############################
   # Convert string to lowercase #
   ###############################
-  TEST_CASE_RUN=$(echo "$TEST_CASE_RUN" | awk '{print tolower($0)}')
+  TEST_CASE_RUN="${TEST_CASE_RUN,,}"
 
   ##########################
   # Get the run local flag #
   ##########################
-  if [ -z "$RUN_LOCAL" ]; then
+  if [ -z "${RUN_LOCAL}" ]; then
     ##################################
     # No flag passed, set to default #
     ##################################
-    RUN_LOCAL="$DEFAULT_RUN_LOCAL"
+    RUN_LOCAL="${DEFAULT_RUN_LOCAL}"
   fi
 
   ###############################
   # Convert string to lowercase #
   ###############################
-  RUN_LOCAL=$(echo "$RUN_LOCAL" | awk '{print tolower($0)}')
+  RUN_LOCAL="${RUN_LOCAL,,}"
 
   #################################
   # Check if were running locally #
   #################################
-  if [[ "$RUN_LOCAL" != "false" ]]; then
+  if [[ ${RUN_LOCAL} != "false" ]]; then
     ##########################################
     # We are running locally for a debug run #
     ##########################################
-    echo "NOTE: ENV VAR [RUN_LOCAL] has been set to:[true]"
-    echo "bypassing GitHub Actions variables..."
-    echo "Linting all files in mapped directory:[$DEFAULT_WORKSPACE]"
+    info "NOTE: ENV VAR [RUN_LOCAL] has been set to:[true]"
+    info "bypassing GitHub Actions variables..."
+
+    ############################
+    # Set the GITHUB_WORKSPACE #
+    ############################
+    if [ -z "${GITHUB_WORKSPACE}" ]; then
+      GITHUB_WORKSPACE="${DEFAULT_WORKSPACE}"
+    fi
+
+    if [ ! -d "${GITHUB_WORKSPACE}" ]; then
+      fatal "Provided volume is not a directory!"
+    fi
+
+    info "Linting all files in mapped directory:[${DEFAULT_WORKSPACE}]"
 
     # No need to touch or set the GITHUB_SHA
     # No need to touch or set the GITHUB_EVENT_PATH
     # No need to touch or set the GITHUB_ORG
     # No need to touch or set the GITHUB_REPO
 
-    ############################
-    # Set the GITHUB_WORKSPACE #
-    ############################
-    GITHUB_WORKSPACE="$DEFAULT_WORKSPACE"
-
     #################################
     # Set the VALIDATE_ALL_CODEBASE #
     #################################
-    VALIDATE_ALL_CODEBASE="$DEFAULT_VALIDATE_ALL_CODEBASE"
+    VALIDATE_ALL_CODEBASE="${DEFAULT_VALIDATE_ALL_CODEBASE}"
   else
     ############################
     # Validate we have a value #
     ############################
-    if [ -z "$GITHUB_SHA" ]; then
-      echo "ERROR! Failed to get [GITHUB_SHA]!"
-      echo "ERROR:[$GITHUB_SHA]"
-      exit 1
+    if [ -z "${GITHUB_SHA}" ]; then
+      error "Failed to get [GITHUB_SHA]!"
+      fatal "[${GITHUB_SHA}]"
     else
-      echo "Successfully found:[GITHUB_SHA], value:[$GITHUB_SHA]"
+      info "Successfully found:${F[W]}[GITHUB_SHA]${F[B]}, value:${F[W]}[${GITHUB_SHA}]"
     fi
 
     ############################
     # Validate we have a value #
     ############################
-    if [ -z "$GITHUB_WORKSPACE" ]; then
-      echo "ERROR! Failed to get [GITHUB_WORKSPACE]!"
-      echo "ERROR:[$GITHUB_WORKSPACE]"
-      exit 1
+    if [ -z "${GITHUB_WORKSPACE}" ]; then
+      error "Failed to get [GITHUB_WORKSPACE]!"
+      fatal "[${GITHUB_WORKSPACE}]"
     else
-      echo "Successfully found:[GITHUB_WORKSPACE], value:[$GITHUB_WORKSPACE]"
+      info "Successfully found:${F[W]}[GITHUB_WORKSPACE]${F[B]}, value:${F[W]}[${GITHUB_WORKSPACE}]"
     fi
 
     ############################
     # Validate we have a value #
     ############################
-    if [ -z "$GITHUB_EVENT_PATH" ]; then
-      echo "ERROR! Failed to get [GITHUB_EVENT_PATH]!"
-      echo "ERROR:[$GITHUB_EVENT_PATH]"
-      exit 1
+    if [ -z "${GITHUB_EVENT_PATH}" ]; then
+      error "Failed to get [GITHUB_EVENT_PATH]!"
+      fatal "[${GITHUB_EVENT_PATH}]"
     else
-      echo "Successfully found:[GITHUB_EVENT_PATH], value:[$GITHUB_EVENT_PATH]"
+      info "Successfully found:${F[W]}[GITHUB_EVENT_PATH]${F[B]}, value:${F[W]}[${GITHUB_EVENT_PATH}]${F[B]}"
     fi
 
     ##################################################
@@ -662,1536 +462,284 @@ GetGitHubVars()
     ######################
     # Get the GitHub Org #
     ######################
-    # shellcheck disable=SC2002
-    GITHUB_ORG=$(cat "$GITHUB_EVENT_PATH" | jq -r '.repository.owner.login' )
+    GITHUB_ORG=$(jq -r '.repository.owner.login' <"${GITHUB_EVENT_PATH}")
+
+    ########################
+    # Fix SHA for PR event #
+    ########################
+    # Github sha on PR events is not the latest commit.
+    # https://docs.github.com/en/actions/reference/events-that-trigger-workflows#pull_request
+    if [ "$GITHUB_EVENT_NAME" == "pull_request" ]; then
+      GITHUB_SHA=$(jq -r .pull_request.head.sha <"$GITHUB_EVENT_PATH")
+    fi
 
     ############################
     # Validate we have a value #
     ############################
-    if [ -z "$GITHUB_ORG" ]; then
-      echo "ERROR! Failed to get [GITHUB_ORG]!"
-      echo "ERROR:[$GITHUB_ORG]"
-      exit 1
+    if [ -z "${GITHUB_ORG}" ]; then
+      error "Failed to get [GITHUB_ORG]!"
+      fatal "[${GITHUB_ORG}]"
     else
-      echo "Successfully found:[GITHUB_ORG], value:[$GITHUB_ORG]"
+      info "Successfully found:${F[W]}[GITHUB_ORG]${F[B]}, value:${F[W]}[${GITHUB_ORG}]"
     fi
 
     #######################
     # Get the GitHub Repo #
     #######################
-    # shellcheck disable=SC2002
-    GITHUB_REPO=$(cat "$GITHUB_EVENT_PATH"| jq -r '.repository.name' )
+    GITHUB_REPO=$(jq -r '.repository.name' <"${GITHUB_EVENT_PATH}")
 
     ############################
     # Validate we have a value #
     ############################
-    if [ -z "$GITHUB_REPO" ]; then
-      echo "ERROR! Failed to get [GITHUB_REPO]!"
-      echo "ERROR:[$GITHUB_REPO]"
-      exit 1
+    if [ -z "${GITHUB_REPO}" ]; then
+      error "Failed to get [GITHUB_REPO]!"
+      fatal "[${GITHUB_REPO}]"
     else
-      echo "Successfully found:[GITHUB_REPO], value:[$GITHUB_REPO]"
-    fi
-  fi
-}
-################################################################################
-#### Function GetValidationInfo ################################################
-GetValidationInfo()
-{
-  ############################################
-  # Print headers for user provided env vars #
-  ############################################
-  echo ""
-  echo "--------------------------------------------"
-  echo "Gathering user validation information..."
-
-  ###########################################
-  # Skip validation if were running locally #
-  ###########################################
-  if [[ "$RUN_LOCAL" != "true" ]]; then
-    ###############################
-    # Convert string to lowercase #
-    ###############################
-    VALIDATE_ALL_CODEBASE=$(echo "$VALIDATE_ALL_CODEBASE" | awk '{print tolower($0)}')
-    ######################################
-    # Validate we should check all files #
-    ######################################
-    if [[ "$VALIDATE_ALL_CODEBASE" != "false" ]]; then
-      # Set to true
-      VALIDATE_ALL_CODEBASE="$DEFAULT_VALIDATE_ALL_CODEBASE"
-      echo "- Validating ALL files in code base..."
-    else
-      # Its false
-      echo "- Only validating [new], or [edited] files in code base..."
+      info "Successfully found:${F[W]}[GITHUB_REPO]${F[B]}, value:${F[W]}[${GITHUB_REPO}]"
     fi
   fi
 
-  ######################
-  # Create Print Array #
-  ######################
-  PRINT_ARRAY=()
+  ############################
+  # Validate we have a value #
+  ############################
+  if [ -z "${GITHUB_TOKEN}" ] && [[ ${RUN_LOCAL} == "false" ]]; then
+    error "Failed to get [GITHUB_TOKEN]!"
+    error "[${GITHUB_TOKEN}]"
+    error "Please set a [GITHUB_TOKEN] from the main workflow environment to take advantage of multiple status reports!"
 
-  ################################
-  # Convert strings to lowercase #
-  ################################
-  VALIDATE_YAML=$(echo "$VALIDATE_YAML" | awk '{print tolower($0)}')
-  VALIDATE_JSON=$(echo "$VALIDATE_JSON" | awk '{print tolower($0)}')
-  VALIDATE_XML=$(echo "$VALIDATE_XML" | awk '{print tolower($0)}')
-  VALIDATE_MD=$(echo "$VALIDATE_MD" | awk '{print tolower($0)}')
-  VALIDATE_BASH=$(echo "$VALIDATE_BASH" | awk '{print tolower($0)}')
-  VALIDATE_PERL=$(echo "$VALIDATE_PERL" | awk '{print tolower($0)}')
-  VALIDATE_PHP=$(echo "$VALIDATE_PHP" | awk '{print tolower($0)}')
-  VALIDATE_PYTHON=$(echo "$VALIDATE_PYTHON" | awk '{print tolower($0)}')
-  VALIDATE_RUBY=$(echo "$VALIDATE_RUBY" | awk '{print tolower($0)}')
-  VALIDATE_COFFEE=$(echo "$VALIDATE_COFFEE" | awk '{print tolower($0)}')
-  VALIDATE_ANSIBLE=$(echo "$VALIDATE_ANSIBLE" | awk '{print tolower($0)}')
-  VALIDATE_JAVASCRIPT_ES=$(echo "$VALIDATE_JAVASCRIPT_ES" | awk '{print tolower($0)}')
-  VALIDATE_JAVASCRIPT_STANDARD=$(echo "$VALIDATE_JAVASCRIPT_STANDARD" | awk '{print tolower($0)}')
-  VALIDATE_TYPESCRIPT_ES=$(echo "$VALIDATE_TYPESCRIPT_ES" | awk '{print tolower($0)}')
-  VALIDATE_TYPESCRIPT_STANDARD=$(echo "$VALIDATE_TYPESCRIPT_STANDARD" | awk '{print tolower($0)}')
-  VALIDATE_DOCKER=$(echo "$VALIDATE_DOCKER" | awk '{print tolower($0)}')
-  VALIDATE_GO=$(echo "$VALIDATE_GO" | awk '{print tolower($0)}')
-  VALIDATE_TERRAFORM=$(echo "$VALIDATE_TERRAFORM" | awk '{print tolower($0)}')
-  VALIDATE_POWERSHELL=$(echo "$VALIDATE_POWERSHELL" | awk '{print tolower($0)}')
-  VALIDATE_CSS=$(echo "$VALIDATE_CSS" | awk '{print tolower($0)}')
-  VALIDATE_ENV=$(echo "$VALIDATE_ENV" | awk '{print tolower($0)}')
-  VALIDATE_KOTLIN=$(echo "$VALIDATE_KOTLIN" | awk '{print tolower($0)}')
-
-  ################################################
-  # Determine if any linters were explicitly set #
-  ################################################
-  ANY_SET="false"
-  if [[ -n "$VALIDATE_YAML" || \
-        -n "$VALIDATE_JSON" || \
-        -n "$VALIDATE_XML" || \
-        -n "$VALIDATE_MD" || \
-        -n "$VALIDATE_BASH" || \
-        -n "$VALIDATE_PERL" || \
-        -n "$VALIDATE_PHP" || \
-        -n "$VALIDATE_PYTHON" || \
-        -n "$VALIDATE_RUBY" || \
-        -n "$VALIDATE_COFFEE" || \
-        -n "$VALIDATE_ANSIBLE" || \
-        -n "$VALIDATE_JAVASCRIPT_ES" || \
-        -n "$VALIDATE_JAVASCRIPT_STANDARD" || \
-        -n "$VALIDATE_TYPESCRIPT_ES" || \
-        -n "$VALIDATE_TYPESCRIPT_STANDARD" || \
-        -n "$VALIDATE_DOCKER" || \
-        -n "$VALIDATE_GO" || \
-        -n "$VALIDATE_TERRAFORM" || \
-        -n "$VALIDATE_POWERSHELL" || \
-        -n "$VALIDATE_CSS" || \
-        -n "$VALIDATE_ENV" || \
-        -n "$VALIDATE_KOTLIN" ]]; then
-    ANY_SET="true"
-  fi
-
-  ####################################
-  # Validate if we should check YAML #
-  ####################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_YAML" ]]; then
-      # YAML flag was not set - default to false
-      VALIDATE_YAML="false"
-    fi
+    ################################################################################
+    # Need to set MULTI_STATUS to false as we cant hit API endpoints without token #
+    ################################################################################
+    MULTI_STATUS='false'
   else
-    # No linter flags were set - default all to true
-    VALIDATE_YAML="true"
-  fi
-
-  ####################################
-  # Validate if we should check JSON #
-  ####################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_JSON" ]]; then
-      # JSON flag was not set - default to false
-      VALIDATE_JSON="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_JSON="true"
-  fi
-
-  ###################################
-  # Validate if we should check XML #
-  ###################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_XML" ]]; then
-      # XML flag was not set - default to false
-      VALIDATE_XML="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_XML="true"
-  fi
-
-  ########################################
-  # Validate if we should check MARKDOWN #
-  ########################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_MD" ]]; then
-      # MD flag was not set - default to false
-      VALIDATE_MD="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_MD="true"
-  fi
-
-  ####################################
-  # Validate if we should check BASH #
-  ####################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_BASH" ]]; then
-      # BASH flag was not set - default to false
-      VALIDATE_BASH="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_BASH="true"
-  fi
-
-  ####################################
-  # Validate if we should check PERL #
-  ####################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_PERL" ]]; then
-      # PERL flag was not set - default to false
-      VALIDATE_PERL="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_PERL="true"
-  fi
-
-  ####################################
-  # Validate if we should check PHP #
-  ####################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_PHP" ]]; then
-      # PHP flag was not set - default to false
-      VALIDATE_PHP="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_PHP="true"
-  fi
-
-  ######################################
-  # Validate if we should check PYTHON #
-  ######################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_PYTHON" ]]; then
-      # PYTHON flag was not set - default to false
-      VALIDATE_PYTHON="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_PYTHON="true"
-  fi
-
-  ####################################
-  # Validate if we should check RUBY #
-  ####################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_RUBY" ]]; then
-      # RUBY flag was not set - default to false
-      VALIDATE_RUBY="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_RUBY="true"
-  fi
-
-  ######################################
-  # Validate if we should check COFFEE #
-  ######################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_COFFEE" ]]; then
-      # COFFEE flag was not set - default to false
-      VALIDATE_COFFEE="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_COFFEE="true"
-  fi
-
-  #######################################
-  # Validate if we should check ANSIBLE #
-  #######################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_ANSIBLE" ]]; then
-      # ANSIBLE flag was not set - default to false
-      VALIDATE_ANSIBLE="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_ANSIBLE="true"
-  fi
-
-  #############################################
-  # Validate if we should check JAVASCRIPT_ES #
-  #############################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_JAVASCRIPT_ES" ]]; then
-      # JAVASCRIPT_ES flag was not set - default to false
-      VALIDATE_JAVASCRIPT_ES="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_JAVASCRIPT_ES="true"
-  fi
-
-  ###################################################
-  # Validate if we should check JAVASCRIPT_STANDARD #
-  ###################################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_JAVASCRIPT_STANDARD" ]]; then
-      # JAVASCRIPT_STANDARD flag was not set - default to false
-      VALIDATE_JAVASCRIPT_STANDARD="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_JAVASCRIPT_STANDARD="true"
-  fi
-
-  #############################################
-  # Validate if we should check TYPESCRIPT_ES #
-  #############################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_TYPESCRIPT_ES" ]]; then
-      # TYPESCRIPT_ES flag was not set - default to false
-      VALIDATE_TYPESCRIPT_ES="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_TYPESCRIPT_ES="true"
-  fi
-
-  ###################################################
-  # Validate if we should check TYPESCRIPT_STANDARD #
-  ###################################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_TYPESCRIPT_STANDARD" ]]; then
-      # TYPESCRIPT_STANDARD flag was not set - default to false
-      VALIDATE_TYPESCRIPT_STANDARD="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_TYPESCRIPT_STANDARD="true"
-  fi
-
-  ######################################
-  # Validate if we should check DOCKER #
-  ######################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_DOCKER" ]]; then
-      # DOCKER flag was not set - default to false
-      VALIDATE_DOCKER="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_DOCKER="true"
-  fi
-
-  ##################################
-  # Validate if we should check GO #
-  ##################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_GO" ]]; then
-      # GO flag was not set - default to false
-      VALIDATE_GO="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_GO="true"
-  fi
-
-  #########################################
-  # Validate if we should check TERRAFORM #
-  #########################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_TERRAFORM" ]]; then
-      # TERRAFORM flag was not set - default to false
-      VALIDATE_TERRAFORM="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_TERRAFORM="true"
-  fi
-
-  #########################################
-  # Validate if we should check POWERSHELL #
-  #########################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_POWERSHELL" ]]; then
-      # POWERSHELL flag was not set - default to false
-      VALIDATE_POWERSHELL="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_POWERSHELL="true"
-  fi
-
-  ###################################
-  # Validate if we should check CSS #
-  ###################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_CSS" ]]; then
-      # CSS flag was not set - default to false
-      VALIDATE_CSS="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_CSS="true"
-  fi
-
-  ###################################
-  # Validate if we should check ENV #
-  ###################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_ENV" ]]; then
-      # ENV flag was not set - default to false
-      VALIDATE_ENV="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_ENV="true"
-  fi
-
-  ######################################
-  # Validate if we should check KOTLIN #
-  ######################################
-  if [[ "$ANY_SET" == "true" ]]; then
-    # Some linter flags were set - only run those set to true
-    if [[ -z "$VALIDATE_KOTLIN" ]]; then
-      # ENV flag was not set - default to false
-      VALIDATE_KOTLIN="false"
-    fi
-  else
-    # No linter flags were set - default all to true
-    VALIDATE_KOTLIN="true"
-  fi
-
-
-  #######################################
-  # Print which linters we are enabling #
-  #######################################
-  if [[ "$VALIDATE_YAML" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [YAML] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [YAML] files in code base...")
-  fi
-  if [[ "$VALIDATE_JSON" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [JSON] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [JSON] files in code base...")
-  fi
-  if [[ "$VALIDATE_XML" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [XML] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [XML] files in code base...")
-  fi
-  if [[ "$VALIDATE_MD" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [MARKDOWN] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [MARKDOWN] files in code base...")
-  fi
-  if [[ "$VALIDATE_BASH" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [BASH] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [BASH] files in code base...")
-  fi
-  if [[ "$VALIDATE_PERL" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [PERL] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [PERL] files in code base...")
-  fi
-  if [[ "$VALIDATE_PHP" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [PHP] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [PHP] files in code base...")
-  fi
-  if [[ "$VALIDATE_PYTHON" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [PYTHON] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [PYTHON] files in code base...")
-  fi
-  if [[ "$VALIDATE_RUBY" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [RUBY] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [RUBY] files in code base...")
-  fi
-  if [[ "$VALIDATE_COFFEE" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [COFFEE] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [COFFEE] files in code base...")
-  fi
-  if [[ "$VALIDATE_ANSIBLE" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [ANSIBLE] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [ANSIBLE] files in code base...")
-  fi
-  if [[ "$VALIDATE_JAVASCRIPT_ES" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [JAVASCRIPT(eslint)] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [JAVASCRIPT(eslint)] files in code base...")
-  fi
-  if [[ "$VALIDATE_JAVASCRIPT_STANDARD" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [JAVASCRIPT(standard)] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [JAVASCRIPT(standard)] files in code base...")
-  fi
-  if [[ "$VALIDATE_TYPESCRIPT_ES" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [TYPESCRIPT(eslint)] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [TYPESCRIPT(eslint)] files in code base...")
-  fi
-  if [[ "$VALIDATE_TYPESCRIPT_STANDARD" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [TYPESCRIPT(standard)] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [TYPESCRIPT(standard)] files in code base...")
-  fi
-  if [[ "$VALIDATE_DOCKER" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [DOCKER] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [DOCKER] files in code base...")
-  fi
-  if [[ "$VALIDATE_GO" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [GOLANG] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [GOLANG] files in code base...")
-  fi
-  if [[ "$VALIDATE_TERRAFORM" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [TERRAFORM] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [TERRAFORM] files in code base...")
-  fi
-  if [[ "$VALIDATE_POWERSHELL" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [POWERSHELL] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [POWERSHELL] files in code base...")
-  fi
-  if [[ "$VALIDATE_CSS" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [CSS] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [CSS] files in code base...")
-  fi
-  if [[ "$VALIDATE_ENV" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [ENV] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [ENV] files in code base...")
-  fi
-  if [[ "$VALIDATE_KOTLIN" == "true" ]]; then
-    PRINT_ARRAY+=("- Validating [KOTLIN] files in code base...")
-  else
-    PRINT_ARRAY+=("- Excluding [KOTLIN] files in code base...")
-  fi
-
-  ##############################
-  # Validate Ansible Directory #
-  ##############################
-  if [ -z "$ANSIBLE_DIRECTORY" ]; then
-    # No Value, need to default
-    ANSIBLE_DIRECTORY="$DEFAULT_ANSIBLE_DIRECTORY"
-  else
-    # Check if first char is '/'
-    if [[ ${ANSIBLE_DIRECTORY:0:1} == "/" ]]; then
-      # Remove first char
-      ANSIBLE_DIRECTORY="${ANSIBLE_DIRECTORY:1}"
-    fi
-    # Need to give it full path
-    TEMP_ANSIBLE_DIRECTORY="$GITHUB_WORKSPACE/$ANSIBLE_DIRECTORY"
-    # Set the value
-    ANSIBLE_DIRECTORY="$TEMP_ANSIBLE_DIRECTORY"
-  fi
-
-  ###############################
-  # Get the disable errors flag #
-  ###############################
-  if [ -z "$DISABLE_ERRORS" ]; then
-    ##################################
-    # No flag passed, set to default #
-    ##################################
-    DISABLE_ERRORS="$DEFAULT_DISABLE_ERRORS"
+    info "Successfully found:${F[W]}[GITHUB_TOKEN]"
   fi
 
   ###############################
   # Convert string to lowercase #
   ###############################
-  DISABLE_ERRORS=$(echo "$DISABLE_ERRORS" | awk '{print tolower($0)}')
+  MULTI_STATUS="${MULTI_STATUS,,}"
 
-  ############################
-  # Set to false if not true #
-  ############################
-  if [ "$DISABLE_ERRORS" != "true" ]; then
-    DISABLE_ERRORS="false"
-  fi
-
-  ############################
-  # Get the run verbose flag #
-  ############################
-  if [ -z "$ACTIONS_RUNNER_DEBUG" ]; then
-    ##################################
-    # No flag passed, set to default #
-    ##################################
-    ACTIONS_RUNNER_DEBUG="$DEFAULT_ACTIONS_RUNNER_DEBUG"
-  fi
-
-  ###############################
-  # Convert string to lowercase #
-  ###############################
-  ACTIONS_RUNNER_DEBUG=$(echo "$ACTIONS_RUNNER_DEBUG" | awk '{print tolower($0)}')
-
-  ############################
-  # Set to true if not false #
-  ############################
-  if [ "$ACTIONS_RUNNER_DEBUG" != "false" ]; then
-    ACTIONS_RUNNER_DEBUG="true"
-  fi
-
-  ###################
-  # Debug on runner #
-  ###################
-  if [[ "$ACTIONS_RUNNER_DEBUG" == "true" ]]; then
-    ###########################
-    # Print the validate info #
-    ###########################
-    for LINE in "${PRINT_ARRAY[@]}"
-    do
-      echo "$LINE"
-    done
-
-    echo "--- DEBUG INFO ---"
-    echo "---------------------------------------------"
-    RUNNER=$(whoami)
-    echo "Runner:[$RUNNER]"
-    echo "ENV:"
-    printenv
-    echo "---------------------------------------------"
-  fi
-}
-################################################################################
-#### Function BuildFileList ####################################################
-BuildFileList()
-{
-  # Need to build a list of all files changed
-  # This can be pulled from the GITHUB_EVENT_PATH payload
-
-  ################
-  # print header #
-  ################
-  if [[ "$ACTIONS_RUNNER_DEBUG" == "true" ]]; then
-    echo ""
-    echo "----------------------------------------------"
-    echo "Pulling in code history and branches..."
-  fi
-
-  #################################################################################
-  # Switch codebase back to the default branch to get a list of all files changed #
-  #################################################################################
-  SWITCH_CMD=$(cd "$GITHUB_WORKSPACE" || exit; git pull --quiet; git checkout "$DEFAULT_BRANCH" 2>&1)
-
-  #######################
-  # Load the error code #
-  #######################
-  ERROR_CODE=$?
-
-  ##############################
-  # Check the shell for errors #
-  ##############################
-  if [ $ERROR_CODE -ne 0 ]; then
-    # Error
-    echo "Failed to switch to $DEFAULT_BRANCH branch to get files changed!"
-    echo "ERROR:[$SWITCH_CMD]"
-    exit 1
-  fi
-
-  ################
-  # print header #
-  ################
-  if [[ "$ACTIONS_RUNNER_DEBUG" == "true" ]]; then
-    echo ""
-    echo "----------------------------------------------"
-    echo "Generating Diff with:[git diff --name-only '$DEFAULT_BRANCH..$GITHUB_SHA' --diff-filter=d]"
-  fi
-
-  #################################################
-  # Get the Array of files changed in the commits #
-  #################################################
-  # shellcheck disable=SC2207
-  RAW_FILE_ARRAY=($(cd "$GITHUB_WORKSPACE" || exit; git diff --name-only "$DEFAULT_BRANCH..$GITHUB_SHA" --diff-filter=d 2>&1))
-
-  #######################
-  # Load the error code #
-  #######################
-  ERROR_CODE=$?
-
-  ##############################
-  # Check the shell for errors #
-  ##############################
-  if [ $ERROR_CODE -ne 0 ]; then
-    # Error
-    echo "ERROR! Failed to gain a list of all files changed!"
-    echo "ERROR:[${RAW_FILE_ARRAY[*]}]"
-    exit 1
-  fi
-
-  ################################################
-  # Iterate through the array of all files found #
-  ################################################
-  echo ""
-  echo "----------------------------------------------"
-  echo "Files that have been modified in the commit(s):"
-  for FILE in "${RAW_FILE_ARRAY[@]}"
-  do
-    ##############
-    # Print file #
-    ##############
-    echo "File:[$FILE]"
-
-    ###########################
-    # Get the files extension #
-    ###########################
-    # Extract just the file and extension, reverse it, cut off extension,
-    # reverse it back, substitute to lowercase
-    FILE_TYPE=$(basename "$FILE" | rev | cut -f1 -d'.' | rev | awk '{print tolower($0)}')
-
-    #########
-    # DEBUG #
-    #########
-    #echo "FILE_TYPE:[$FILE_TYPE]"
-
-    #####################
-    # Get the YML files #
-    #####################
-    if [ "$FILE_TYPE" == "yml" ] || [ "$FILE_TYPE" == "yaml" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_YML+=("$FILE")
-      ##########################################################
-      # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-      ##########################################################
-      READ_ONLY_CHANGE_FLAG=1
-    ######################
-    # Get the JSON files #
-    ######################
-    elif [ "$FILE_TYPE" == "json" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_JSON+=("$FILE")
-      ##########################################################
-      # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-      ##########################################################
-      READ_ONLY_CHANGE_FLAG=1
-    #####################
-    # Get the XML files #
-    #####################
-    elif [ "$FILE_TYPE" == "xml" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_XML+=("$FILE")
-      ##########################################################
-      # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-      ##########################################################
-      READ_ONLY_CHANGE_FLAG=1
-    ##########################
-    # Get the MARKDOWN files #
-    ##########################
-    elif [ "$FILE_TYPE" == "md" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_MD+=("$FILE")
-    ######################
-    # Get the BASH files #
-    ######################
-    elif [ "$FILE_TYPE" == "sh" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_BASH+=("$FILE")
-      ##########################################################
-      # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-      ##########################################################
-      READ_ONLY_CHANGE_FLAG=1
-    ######################
-    # Get the PERL files #
-    ######################
-    elif [ "$FILE_TYPE" == "pl" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_PERL+=("$FILE")
-      ##########################################################
-      # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-      ##########################################################
-      READ_ONLY_CHANGE_FLAG=1
-    ######################
-    # Get the PHP files #
-    ######################
-    elif [ "$FILE_TYPE" == "php" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_PHP+=("$FILE")
-      ##########################################################
-      # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-      ##########################################################
-      READ_ONLY_CHANGE_FLAG=1
-    ######################
-    # Get the RUBY files #
-    ######################
-    elif [ "$FILE_TYPE" == "rb" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_RUBY+=("$FILE")
-      ##########################################################
-      # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-      ##########################################################
-      READ_ONLY_CHANGE_FLAG=1
-    ########################
-    # Get the PYTHON files #
-    ########################
-    elif [ "$FILE_TYPE" == "py" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_PYTHON+=("$FILE")
-      ##########################################################
-      # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-      ##########################################################
-      READ_ONLY_CHANGE_FLAG=1
-    ########################
-    # Get the COFFEE files #
-    ########################
-    elif [ "$FILE_TYPE" == "coffee" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_COFFEESCRIPT+=("$FILE")
-      ##########################################################
-      # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-      ##########################################################
-      READ_ONLY_CHANGE_FLAG=1
+  #######################################################################
+  # Check to see if the multi status is set, and we have a token to use #
+  #######################################################################
+  if [ "${MULTI_STATUS}" == "true" ] && [ -n "${GITHUB_TOKEN}" ]; then
     ############################
-    # Get the JavaScript files #
+    # Validate we have a value #
     ############################
-    elif [ "$FILE_TYPE" == "js" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_JAVASCRIPT_ES+=("$FILE")
-      FILE_ARRAY_JAVASCRIPT_STANDARD+=("$FILE")
-      ##########################################################
-      # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-      ##########################################################
-      READ_ONLY_CHANGE_FLAG=1
-    ############################
-    # Get the TypeScript files #
-    ############################
-    elif [ "$FILE_TYPE" == "ts" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_TYPESCRIPT_ES+=("$FILE")
-      FILE_ARRAY_TYPESCRIPT_STANDARD+=("$FILE")
-      ##########################################################
-      # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-      ##########################################################
-      READ_ONLY_CHANGE_FLAG=1
-    ########################
-    # Get the Golang files #
-    ########################
-    elif [ "$FILE_TYPE" == "go" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_GO+=("$FILE")
-      ##########################################################
-      # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-      ##########################################################
-      READ_ONLY_CHANGE_FLAG=1
-    ###########################
-    # Get the Terraform files #
-    ###########################
-    elif [ "$FILE_TYPE" == "tf" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_TERRAFORM+=("$FILE")
-      ##########################################################
-      # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-      ##########################################################
-      READ_ONLY_CHANGE_FLAG=1
-    ###########################
-    # Get the Powershell files #
-    ###########################
-    elif [ "$FILE_TYPE" == "ps1" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_POWERSHELL+=("$FILE")
-    elif [ "$FILE_TYPE" == "css" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_CSS+=("$FILE")
-      ##########################################################
-      # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-      ##########################################################
-      READ_ONLY_CHANGE_FLAG=1
-    elif [ "$FILE_TYPE" == "env" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_ENV+=("$FILE")
-      ##########################################################
-      # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-      ##########################################################
-      READ_ONLY_CHANGE_FLAG=1
-    elif [ "$FILE_TYPE" == "kt" ] || [ "$FILE_TYPE" == "kts" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_KOTLIN+=("$FILE")
-      ##########################################################
-      # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-      ##########################################################
-      READ_ONLY_CHANGE_FLAG=1
-    elif [ "$FILE" == "Dockerfile" ]; then
-      ################################
-      # Append the file to the array #
-      ################################
-      FILE_ARRAY_DOCKER+=("$FILE")
-      ##########################################################
-      # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-      ##########################################################
-      READ_ONLY_CHANGE_FLAG=1
+    if [ -z "${GITHUB_REPOSITORY}" ]; then
+      error "Failed to get [GITHUB_REPOSITORY]!"
+      fatal "[${GITHUB_REPOSITORY}]"
     else
-      ##############################################
-      # Use file to see if we can parse what it is #
-      ##############################################
-      GET_FILE_TYPE_CMD=$(file "$FILE" 2>&1)
-
-      #################
-      # Check if bash #
-      #################
-      if [[ "$GET_FILE_TYPE_CMD" == *"Bourne-Again shell script"* ]]; then
-        #######################
-        # It is a bash script #
-        #######################
-        echo "WARN! Found bash script without extension:[.sh]"
-        echo "Please update file with proper extensions."
-        ################################
-        # Append the file to the array #
-        ################################
-        FILE_ARRAY_BASH+=("$FILE")
-        ##########################################################
-        # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-        ##########################################################
-        READ_ONLY_CHANGE_FLAG=1
-      elif [[ "$GET_FILE_TYPE_CMD" == *"Ruby script"* ]]; then
-        #######################
-        # It is a Ruby script #
-        #######################
-        echo "WARN! Found ruby script without extension:[.rb]"
-        echo "Please update file with proper extensions."
-        ################################
-        # Append the file to the array #
-        ################################
-        FILE_ARRAY_RUBY+=("$FILE")
-        ##########################################################
-        # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-        ##########################################################
-        READ_ONLY_CHANGE_FLAG=1
-      else
-        ############################
-        # Extension was not found! #
-        ############################
-        echo "  - WARN! Failed to get filetype for:[$FILE]!"
-        ##########################################################
-        # Set the READ_ONLY_CHANGE_FLAG since this could be exec #
-        ##########################################################
-        READ_ONLY_CHANGE_FLAG=1
-      fi
+      info "Successfully found:${F[W]}[GITHUB_REPOSITORY]${F[B]}, value:${F[W]}[${GITHUB_REPOSITORY}]"
     fi
-  done
 
-  #########################################
-  # Need to switch back to branch of code #
-  #########################################
-  SWITCH2_CMD=$(cd "$GITHUB_WORKSPACE" || exit; git checkout --progress --force "$GITHUB_SHA" 2>&1)
-
-  #######################
-  # Load the error code #
-  #######################
-  ERROR_CODE=$?
-
-  ##############################
-  # Check the shell for errors #
-  ##############################
-  if [ $ERROR_CODE -ne 0 ]; then
-    # Error
-    echo "Failed to switch back to branch!"
-    echo "ERROR:[$SWITCH2_CMD]"
-    exit 1
+    ############################
+    # Validate we have a value #
+    ############################
+    if [ -z "${GITHUB_RUN_ID}" ]; then
+      error "Failed to get [GITHUB_RUN_ID]!"
+      fatal "[${GITHUB_RUN_ID}]"
+    else
+      info "Successfully found:${F[W]}[GITHUB_RUN_ID]${F[B]}, value:${F[W]}[${GITHUB_RUN_ID}]"
+    fi
   fi
-
-  ################
-  # Footer print #
-  ################
-  echo ""
-  echo "----------------------------------------------"
-  echo "Successfully gathered list of files..."
 }
 ################################################################################
-#### Function LintCodebase #####################################################
-LintCodebase()
-{
+#### Function CallStatusAPI ####################################################
+CallStatusAPI() {
   ####################
   # Pull in the vars #
   ####################
-  FILE_TYPE="$1" && shift       # Pull the variable and remove from array path  (Example: JSON)
-  LINTER_NAME="$1" && shift     # Pull the variable and remove from array path  (Example: jsonlint)
-  LINTER_COMMAND="$1" && shift  # Pull the variable and remove from array path  (Example: jsonlint -c ConfigFile /path/to/file)
-  FILE_EXTENSIONS="$1" && shift # Pull the variable and remove from array path  (Example: *.json)
-  FILE_ARRAY=("$@")             # Array of files to validate                    (Example: $FILE_ARRAY_JSON)
+  LANGUAGE="${1}" # langauge that was validated
+  STATUS="${2}"   # success | error
+  SUCCESS_MSG='No errors were found in the linting process'
+  FAIL_MSG='Errors were detected, please view logs'
+  MESSAGE='' # Message to send to status API
 
-  ######################
-  # Create Print Array #
-  ######################
-  PRINT_ARRAY=()
+  debug "Calling Multi-Status API for $LANGUAGE with status $STATUS"
 
-  ################
-  # print header #
-  ################
-  PRINT_ARRAY+=("")
-  PRINT_ARRAY+=("----------------------------------------------")
-  PRINT_ARRAY+=("----------------------------------------------")
-  PRINT_ARRAY+=("Linting [$FILE_TYPE] files...")
-  PRINT_ARRAY+=("----------------------------------------------")
-  PRINT_ARRAY+=("----------------------------------------------")
-
-  #######################################
-  # Validate we have jsonlint installed #
-  #######################################
-  # shellcheck disable=SC2230
-  VALIDATE_INSTALL_CMD=$(command -v "$LINTER_NAME" 2>&1)
-
-  #######################
-  # Load the error code #
-  #######################
-  ERROR_CODE=$?
-
-  ##############################
-  # Check the shell for errors #
-  ##############################
-  if [ $ERROR_CODE -ne 0 ]; then
-    # Failed
-    echo "ERROR! Failed to find [$LINTER_NAME] in system!"
-    echo "ERROR:[$VALIDATE_INSTALL_CMD]"
-    exit 1
-  else
+  ######################################
+  # Check the status to create message #
+  ######################################
+  if [ "${STATUS}" == "success" ]; then
     # Success
-    if [[ "$ACTIONS_RUNNER_DEBUG" == "true" ]]; then
-      echo "Successfully found binary in system"
-      echo "Location:[$VALIDATE_INSTALL_CMD]"
-    fi
-  fi
-
-  ##########################
-  # Initialize empty Array #
-  ##########################
-  LIST_FILES=()
-
-  ################
-  # Set the flag #
-  ################
-  SKIP_FLAG=0
-
-  ############################################################
-  # Check to see if we need to go through array or all files #
-  ############################################################
-  if [ ${#FILE_ARRAY[@]} -eq 0 ] && [ "$VALIDATE_ALL_CODEBASE" == "false" ]; then
-    # No files found in commit and user has asked to not validate code base
-    SKIP_FLAG=1
-    # echo " - No files found in changeset to lint for language:[$FILE_TYPE]"
-  elif [ ${#FILE_ARRAY[@]} -ne 0 ]; then
-    # We have files added to array of files to check
-    LIST_FILES=("${FILE_ARRAY[@]}") # Copy the array into list
+    MESSAGE="${SUCCESS_MSG}"
   else
-    #################################
-    # Get list of all files to lint #
-    #################################
-    # shellcheck disable=SC2207,SC2086
-    LIST_FILES=($(cd "$GITHUB_WORKSPACE" || exit; find . -type f -regex "$FILE_EXTENSIONS" 2>&1))
-
-    ############################################################
-    # Set it back to empty if loaded with blanks from scanning #
-    ############################################################
-    if [ ${#LIST_FILES[@]} -lt 1 ]; then
-      ######################
-      # Set to empty array #
-      ######################
-      LIST_FILES=()
-      #############################
-      # Skip as we found no files #
-      #############################
-      SKIP_FLAG=1
-    fi
+    # Failure
+    MESSAGE="${FAIL_MSG}"
   fi
 
-  ###############################
-  # Check if any data was found #
-  ###############################
-  if [ $SKIP_FLAG -eq 0 ]; then
-    ######################
-    # Print Header array #
-    ######################
-    for LINE in "${PRINT_ARRAY[@]}"
-    do
-      #########################
-      # Print the header info #
-      #########################
-      echo "$LINE"
-    done
+  ##########################################################
+  # Check to see if were enabled for multi Status mesaages #
+  ##########################################################
+  if [ "${MULTI_STATUS}" == "true" ] && [ -n "${GITHUB_TOKEN}" ] && [ -n "${GITHUB_REPOSITORY}" ]; then
 
-    ##################
-    # Lint the files #
-    ##################
-    for FILE in "${LIST_FILES[@]}"
-    do
-      #####################
-      # Get the file name #
-      #####################
-      FILE_NAME=$(basename "$FILE" 2>&1)
-
-      #####################################################
-      # Make sure we dont lint node modules or test cases #
-      #####################################################
-      if [[ $FILE == *"node_modules"* ]]; then
-        # This is a node modules file
-        continue
-      elif [[ $FILE == *"$TEST_CASE_FOLDER"* ]]; then
-        # This is the test cases, we should always skip
-        continue
-      fi
-
-      ##############
-      # File print #
-      ##############
-      echo "---------------------------"
-      echo "File:[$FILE]"
-
-      ####################
-      # Set the base Var #
-      ####################
-      LINT_CMD=''
-
-      #######################################
-      # Corner case for Powershell subshell #
-      #######################################
-      if [[ "$FILE_TYPE" == "POWERSHELL" ]]; then
-        ################################
-        # Lint the file with the rules #
-        ################################
-        # Need to append "'" to make the pwsh call syntax correct, also exit with exit code from inner subshell
-        LINT_CMD=$(cd "$GITHUB_WORKSPACE/$TEST_CASE_FOLDER" || exit; $LINTER_COMMAND "$FILE"; exit $? 2>&1)
-      else
-        ################################
-        # Lint the file with the rules #
-        ################################
-        LINT_CMD=$(cd "$GITHUB_WORKSPACE" || exit; $LINTER_COMMAND "$FILE" 2>&1)
-      fi
-
-      #######################
-      # Load the error code #
-      #######################
-      ERROR_CODE=$?
-
-      ##############################
-      # Check the shell for errors #
-      ##############################
-      if [ $ERROR_CODE -ne 0 ]; then
-        #########
-        # Error #
-        #########
-        echo "ERROR! Found errors in [$LINTER_NAME] linter!"
-        echo "ERROR:[$LINT_CMD]"
-        # Increment the error count
-        (("ERRORS_FOUND_$FILE_TYPE++"))
-      else
-        ###########
-        # Success #
-        ###########
-        echo " - File:[$FILE_NAME] was linted with [$LINTER_NAME] successfully"
-      fi
-    done
-  fi
-}
-################################################################################
-#### Function TestCodebase #####################################################
-TestCodebase()
-{
-  ####################
-  # Pull in the vars #
-  ####################
-  FILE_TYPE="$1"        # Pull the variable and remove from array path  (Example: JSON)
-  LINTER_NAME="$2"      # Pull the variable and remove from array path  (Example: jsonlint)
-  LINTER_COMMAND="$3"   # Pull the variable and remove from array path  (Example: jsonlint -c ConfigFile /path/to/file)
-  FILE_EXTENSIONS="$4"  # Pull the variable and remove from array path  (Example: *.json)
-
-  ################
-  # print header #
-  ################
-  echo ""
-  echo "----------------------------------------------"
-  echo "----------------------------------------------"
-  echo "Testing Codebase [$FILE_TYPE] files..."
-  echo "----------------------------------------------"
-  echo "----------------------------------------------"
-  echo ""
-
-  #####################################
-  # Validate we have linter installed #
-  #####################################
-  # shellcheck disable=SC2230
-  VALIDATE_INSTALL_CMD=$(command -v "$LINTER_NAME" 2>&1)
-
-  #######################
-  # Load the error code #
-  #######################
-  ERROR_CODE=$?
-
-  ##############################
-  # Check the shell for errors #
-  ##############################
-  if [ $ERROR_CODE -ne 0 ]; then
-    # Failed
-    echo "ERROR! Failed to find [$LINTER_NAME] in system!"
-    echo "ERROR:[$VALIDATE_INSTALL_CMD]"
-    exit 1
-  else
-    # Success
-    echo "Successfully found binary in system"
-    echo "Location:[$VALIDATE_INSTALL_CMD]"
-  fi
-
-  ##########################
-  # Initialize empty Array #
-  ##########################
-  LIST_FILES=()
-
-  ############################################
-  # Check if its ansible, as its the outlier #
-  ############################################
-  if [[ "$FILE_TYPE" == "ANSIBLE" ]]; then
-    #################################
-    # Get list of all files to lint #
-    #################################
-    # shellcheck disable=SC2207,SC2086,SC2010
-    LIST_FILES=($(cd "$GITHUB_WORKSPACE/$TEST_CASE_FOLDER" || exit; ls ansible/ | grep ".yml" 2>&1))
-  else
-    #################################
-    # Get list of all files to lint #
-    #################################
-    # shellcheck disable=SC2207,SC2086
-    LIST_FILES=($(cd "$GITHUB_WORKSPACE/$TEST_CASE_FOLDER" || exit; find . -type f -regex "$FILE_EXTENSIONS" ! -path "*./ansible*" 2>&1))
-  fi
-
-  ##################
-  # Lint the files #
-  ##################
-  for FILE in "${LIST_FILES[@]}"
-  do
-    #####################
-    # Get the file name #
-    #####################
-    FILE_NAME=$(basename "$FILE" 2>&1)
-
-    ############################
-    # Get the file pass status #
-    ############################
-    # Example: markdown_good_1.md -> good
-    FILE_STATUS=$(echo "$FILE_NAME" |cut -f2 -d'_')
-
-    #########################################################
-    # If not found, assume it should be linted successfully #
-    #########################################################
-    if [ -z "$FILE_STATUS" ] || [[ "$FILE" == *"README"* ]]; then
-      ##################################
-      # Set to good for proper linting #
-      ##################################
-      FILE_STATUS="good"
+    # make sure we honor DISABLE_ERRORS
+    if [ "${DISABLE_ERRORS}" == "true" ]; then
+      STATUS="success"
     fi
 
-    ##############
-    # File print #
-    ##############
-    echo "---------------------------"
-    echo "File:[$FILE]"
+    debug "URL: ${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}"
 
-    ########################
-    # Set the lint command #
-    ########################
-    LINT_CMD=''
-
-    #######################################
-    # Check if docker and get folder name #
-    #######################################
-    if [[ "$FILE_TYPE" == "DOCKER" ]]; then
-      if [[ "$FILE" == *"good"* ]]; then
-        #############
-        # Good file #
-        #############
-        FILE_STATUS='good'
-      else
-        ############
-        # Bad file #
-        ############
-        FILE_STATUS='bad'
-      fi
-    fi
-
-    #####################
-    # Check for ansible #
-    #####################
-    if [[ "$FILE_TYPE" == "ANSIBLE" ]]; then
-      ########################################
-      # Make sure we dont lint certain files #
-      ########################################
-      if [[ $FILE == *"vault.yml"* ]] || [[ $FILE == *"galaxy.yml"* ]]; then
-        # This is a file we dont look at
-        continue
-      fi
-
-      ################################
-      # Lint the file with the rules #
-      ################################
-      LINT_CMD=$(cd "$GITHUB_WORKSPACE/$TEST_CASE_FOLDER/ansible" || exit; $LINTER_COMMAND "$FILE" 2>&1)
-    elif [[ "$FILE_TYPE" == "POWERSHELL" ]]; then
-      ################################
-      # Lint the file with the rules #
-      ################################
-      # Need to append "'" to make the pwsh call syntax correct, also exit with exit code from inner subshell
-      LINT_CMD=$(cd "$GITHUB_WORKSPACE/$TEST_CASE_FOLDER" || exit; $LINTER_COMMAND "$FILE"; exit $? 2>&1)
-    else
-      ################################
-      # Lint the file with the rules #
-      ################################
-      LINT_CMD=$(cd "$GITHUB_WORKSPACE/$TEST_CASE_FOLDER" || exit; $LINTER_COMMAND "$FILE" 2>&1)
-    fi
+    ##############################################
+    # Call the status API to create status check #
+    ##############################################
+    SEND_STATUS_CMD=$(
+      curl -f -s -X POST \
+        --url "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+        -H 'accept: application/vnd.github.v3+json' \
+        -H "authorization: Bearer ${GITHUB_TOKEN}" \
+        -H 'content-type: application/json' \
+        -d "{ \"state\": \"${STATUS}\",
+        \"target_url\": \"https://${GITHUB_DOMAIN:-github.com}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\",
+        \"description\": \"${MESSAGE}\", \"context\": \"--> Linted: ${LANGUAGE}\"
+      }" 2>&1
+    )
 
     #######################
     # Load the error code #
     #######################
     ERROR_CODE=$?
 
-    ########################################
-    # Check for if it was supposed to pass #
-    ########################################
-    if [[ "$FILE_STATUS" == "good" ]]; then
-      ##############################
-      # Check the shell for errors #
-      ##############################
-      if [ $ERROR_CODE -ne 0 ]; then
-        #########
-        # Error #
-        #########
-        echo "ERROR! Found errors in [$LINTER_NAME] linter!"
-        echo "ERROR:[$LINT_CMD]"
-        echo "ERROR: Linter CMD:[$LINTER_COMMAND $FILE]"
-        # Increment the error count
-        (("ERRORS_FOUND_$FILE_TYPE++"))
-      else
-        ###########
-        # Success #
-        ###########
-        echo " - File:[$FILE_NAME] was linted with [$LINTER_NAME] successfully"
-      fi
-    else
-      #######################################
-      # File status = bad, this should fail #
-      #######################################
-      ##############################
-      # Check the shell for errors #
-      ##############################
-      if [ $ERROR_CODE -eq 0 ]; then
-        #########
-        # Error #
-        #########
-        echo "ERROR! Found errors in [$LINTER_NAME] linter!"
-        echo "ERROR! This file should have failed test case!"
-        echo "ERROR:[$LINT_CMD]"
-        echo "ERROR: Linter CMD:[$LINTER_COMMAND $FILE]"
-        # Increment the error count
-        (("ERRORS_FOUND_$FILE_TYPE++"))
-      else
-        ###########
-        # Success #
-        ###########
-        echo " - File:[$FILE_NAME] failed test case with [$LINTER_NAME] successfully"
-      fi
+    debug "Send status comd output: [$SEND_STATUS_CMD]"
+
+    ##############################
+    # Check the shell for errors #
+    ##############################
+    if [ "${ERROR_CODE}" -ne 0 ]; then
+      # ERROR
+      info "ERROR! Failed to call GitHub Status API!"
+      info "ERROR:[${SEND_STATUS_CMD}]"
+      # Not going to fail the script on this yet...
     fi
-  done
+  fi
 }
 ################################################################################
 #### Function Footer ###########################################################
-Footer()
-{
-  echo ""
-  echo "----------------------------------------------"
-  echo "----------------------------------------------"
-  echo "The script has completed"
-  echo "----------------------------------------------"
-  echo "----------------------------------------------"
-  echo ""
+Footer() {
+  info "----------------------------------------------"
+  info "----------------------------------------------"
+  info "The script has completed"
+  info "----------------------------------------------"
+  info "----------------------------------------------"
+
+  ####################################################
+  # Need to clean up the lanuage array of duplicates #
+  ####################################################
+  mapfile -t UNIQUE_LINTED_ARRAY < <(for LANG in "${LINTED_LANGUAGES_ARRAY[@]}"; do echo "${LANG}"; done | sort -u)
+  export UNIQUE_LINTED_ARRAY # Workaround SC2034
 
   ##############################
   # Prints for errors if found #
   ##############################
-  for LANGUAGE in "${LANGUAGE_ARRAY[@]}"
-  do
+  for LANGUAGE in "${LANGUAGE_ARRAY[@]}"; do
     ###########################
     # Build the error counter #
     ###########################
-    ERROR_COUNTER="ERRORS_FOUND_$LANGUAGE"
+    ERROR_COUNTER="ERRORS_FOUND_${LANGUAGE}"
 
     ##################
     # Print if not 0 #
     ##################
-    if [ "${!ERROR_COUNTER}" -ne 0 ]; then
-      # Print the goods
-      echo "ERRORS FOUND in $LANGUAGE:[${!ERROR_COUNTER}]"
+    if [[ ${!ERROR_COUNTER} -ne 0 ]]; then
+      # We found errors in the language
+      ###################
+      # Print the goods #
+      ###################
+      error "ERRORS FOUND${NC} in ${LANGUAGE}:[${!ERROR_COUNTER}]"
+
+      #########################################
+      # Create status API for Failed language #
+      #########################################
+      CallStatusAPI "${LANGUAGE}" "error"
+      ######################################
+      # Check if we validated the langauge #
+      ######################################
+    elif [[ ${!ERROR_COUNTER} -eq 0 ]]; then
+      if CheckInArray "${LANGUAGE}"; then
+        # No errors found when linting the language
+        CallStatusAPI "${LANGUAGE}" "success"
+      fi
     fi
   done
 
   ##################################
   # Exit with 0 if errors disabled #
   ##################################
-  if [ "$DISABLE_ERRORS" == "true" ]; then
-    echo "WARN! Exiting with exit code:[0] as:[DISABLE_ERRORS] was set to:[$DISABLE_ERRORS]"
+  if [ "${DISABLE_ERRORS}" == "true" ]; then
+    warn "Exiting with exit code:[0] as:[DISABLE_ERRORS] was set to:[${DISABLE_ERRORS}]"
     exit 0
+  fi
+
   ###############################
   # Exit with 1 if errors found #
   ###############################
-  elif [ "$ERRORS_FOUND_YML" -ne 0 ] || \
-     [ "$ERRORS_FOUND_JSON" -ne 0 ] || \
-     [ "$ERRORS_FOUND_XML" -ne 0 ] || \
-     [ "$ERRORS_FOUND_MARKDOWN" -ne 0 ] || \
-     [ "$ERRORS_FOUND_BASH" -ne 0 ] || \
-     [ "$ERRORS_FOUND_PERL" -ne 0 ] || \
-     [ "$ERRORS_FOUND_PHP" -ne 0 ] || \
-     [ "$ERRORS_FOUND_PYTHON" -ne 0 ] || \
-     [ "$ERRORS_FOUND_COFFEESCRIPT" -ne 0 ] || \
-     [ "$ERRORS_FOUND_ANSIBLE" -ne 0 ] || \
-     [ "$ERRORS_FOUND_JAVASCRIPT_ES" -ne 0 ] || \
-     [ "$ERRORS_FOUND_JAVASCRIPT_STANDARD" -ne 0 ] || \
-     [ "$ERRORS_FOUND_TYPESCRIPT_ES" -ne 0 ] || \
-     [ "$ERRORS_FOUND_TYPESCRIPT_STANDARD" -ne 0 ] || \
-     [ "$ERRORS_FOUND_DOCKER" -ne 0 ] || \
-     [ "$ERRORS_FOUND_GO" -ne 0 ] || \
-     [ "$ERRORS_FOUND_TERRAFORM" -ne 0 ] || \
-     [ "$ERRORS_FOUND_POWERSHELL" -ne 0 ] || \
-     [ "$ERRORS_FOUND_RUBY" -ne 0 ] || \
-     [ "$ERRORS_FOUND_CSS" -ne 0 ] || \
-     [ "$ERRORS_FOUND_ENV" -ne 0 ] || \
-     [ "$ERRORS_FOUND_KOTLIN" -ne 0 ]; then
-    # Failed exit
-    echo "Exiting with errors found!"
-    exit 1
-  else
-    #################
-    # Footer prints #
-    #################
-    echo ""
-    echo "All file(s) linted successfully with no errors detected"
-    echo "----------------------------------------------"
-    echo ""
-    # Successful exit
-    exit 0
+  # Loop through all languages
+  for LANGUAGE in "${LANGUAGE_ARRAY[@]}"; do
+    # build the variable
+    ERRORS_FOUND_LANGUAGE="ERRORS_FOUND_${LANGUAGE}"
+    # Check if error was found
+    if [[ ${!ERRORS_FOUND_LANGUAGE} -ne 0 ]]; then
+      # Failed exit
+      fatal "Exiting with errors found!"
+    fi
+  done
+
+  ########################
+  # Footer prints Exit 0 #
+  ########################
+  notice "All file(s) linted successfully with no errors detected"
+  info "----------------------------------------------"
+  # Successful exit
+  exit 0
+}
+################################################################################
+#### Function UpdateLoopsForImage ##############################################
+UpdateLoopsForImage() {
+  ######################################################################
+  # Need to clean the array lists of the linters removed for the image #
+  ######################################################################
+  if [[ "${IMAGE}" == "slim" ]]; then
+    #############################################
+    # Need to remove linters for the slim image #
+    #############################################
+    REMOVE_ARRAY=("ARM" "CSHARP" "ENV" "POWERSHELL" "RUST_2015" "RUST_2018" "RUST_CLIPPY")
+
+    # Remove from LANGUAGE_ARRAY
+    echo "Removing Languages from LANGUAGE_ARRAY for slim image..."
+    for REMOVE_LANGUAGE in "${REMOVE_ARRAY[@]}"; do
+      for INDEX in "${!LANGUAGE_ARRAY[@]}"; do
+        if [[ ${LANGUAGE_ARRAY[INDEX]} = "${REMOVE_LANGUAGE}" ]]; then
+          echo "found item:[${REMOVE_LANGUAGE}], removing Language..."
+          unset 'LANGUAGE_ARRAY[INDEX]'
+        fi
+      done
+    done
+
+    # Remove from LINTER_NAMES_ARRAY
+    echo "Removing Linters from LINTER_NAMES_ARRAY for slim image..."
+    for REMOVE_LINTER in "${REMOVE_ARRAY[@]}"; do
+      for INDEX in "${!LINTER_NAMES_ARRAY[@]}"; do
+        if [[ ${INDEX} = "${REMOVE_LINTER}" ]]; then
+          echo "found item:[${REMOVE_LINTER}], removing linter..."
+          unset 'LINTER_NAMES_ARRAY[$INDEX]'
+        fi
+      done
+    done
   fi
 }
 ################################################################################
-#### Function RunTestCases #####################################################
-RunTestCases()
-{
-  # This loop will run the test cases and exclude user code
-  # This is called from the automation process to validate new code
-  # When a PR is opened, the new code is validated with the default branch
-  # version of linter.sh, and a new container is built with the latest codebase
-  # for testing. That container is spun up, and ran,
-  # with the flag: TEST_CASE_RUN=true
-  # So that the new code can be validated against the test cases
+#### Function Cleanup ##########################################################
+cleanup() {
+  local -ri EXIT_CODE=$?
 
-  #################
-  # Header prints #
-  #################
-  echo ""
-  echo "----------------------------------------------"
-  echo "-------------- TEST CASE RUN -----------------"
-  echo "----------------------------------------------"
-  echo ""
+  sh -c "cat ${LOG_TEMP} >> ${GITHUB_WORKSPACE}/${LOG_FILE}" || true
 
-  #######################
-  # Test case languages #
-  #######################
-  TestCodebase "YML" "yamllint" "yamllint -c $YAML_LINTER_RULES" ".*\.\(yml\|yaml\)\$"
-  TestCodebase "JSON" "jsonlint" "jsonlint" ".*\.\(json\)\$"
-  TestCodebase "XML" "xmllint" "xmllint" ".*\.\(xml\)\$"
-  TestCodebase "MARKDOWN" "markdownlint" "markdownlint -c $MD_LINTER_RULES" ".*\.\(md\)\$"
-  TestCodebase "BASH" "shellcheck" "shellcheck" ".*\.\(sh\)\$"
-  TestCodebase "PYTHON" "pylint" "pylint --rcfile $PYTHON_LINTER_RULES -E" ".*\.\(py\)\$"
-  TestCodebase "PERL" "perl" "perl -Mstrict -cw" ".*\.\(pl\)\$"
-  TestCodebase "PHP" "php" "php -l" ".*\.\(php\)\$"
-  TestCodebase "RUBY" "rubocop" "rubocop -c $RUBY_LINTER_RULES" ".*\.\(rb\)\$"
-  TestCodebase "GO" "golangci-lint" "golangci-lint run -c $GO_LINTER_RULES" ".*\.\(go\)\$"
-  TestCodebase "COFFEESCRIPT" "coffeelint" "coffeelint -f $COFFEESCRIPT_LINTER_RULES" ".*\.\(coffee\)\$"
-  TestCodebase "JAVASCRIPT_ES" "eslint" "eslint --no-eslintrc -c $JAVASCRIPT_LINTER_RULES" ".*\.\(js\)\$"
-  TestCodebase "JAVASCRIPT_STANDARD" "standard" "standard $JAVASCRIPT_STANDARD_LINTER_RULES" ".*\.\(js\)\$"
-  TestCodebase "TYPESCRIPT_ES" "eslint" "eslint --no-eslintrc -c $TYPESCRIPT_LINTER_RULES" ".*\.\(ts\)\$"
-  TestCodebase "TYPESCRIPT_STANDARD" "standard" "standard --parser @typescript-eslint/parser --plugin @typescript-eslint/eslint-plugin $TYPESCRIPT_STANDARD_LINTER_RULES" ".*\.\(ts\)\$"
-  TestCodebase "DOCKER" "/dockerfilelint/bin/dockerfilelint" "/dockerfilelint/bin/dockerfilelint" ".*\(Dockerfile\)\$"
-  TestCodebase "ANSIBLE" "ansible-lint" "ansible-lint -v -c $ANSIBLE_LINTER_RULES" "ansible-lint"
-  TestCodebase "TERRAFORM" "tflint" "tflint -c $TERRAFORM_LINTER_RULES" ".*\.\(tf\)\$"
-  TestCodebase "POWERSHELL" "pwsh" "pwsh -c Invoke-ScriptAnalyzer -EnableExit -Settings $POWERSHELL_LINTER_RULES -Path" ".*\.\(ps1\|psm1\|psd1\|ps1xml\|pssc\|psrc\|cdxml\)\$"
-  TestCodebase "CSS" "stylelint" "stylelint --config $CSS_LINTER_RULES" ".*\.\(css\)\$"
-  TestCodebase "ENV" "dotenv-linter" "dotenv-linter" ".*\.\(env\)\$"
-  TestCodebase "KOTLIN" "ktlint" "ktlint" ".*\.\(kt\|kts\)\$"
-
-  #################
-  # Footer prints #
-  #################
-  # Call the footer to display run information
-  # and exit with error code
-  Footer
+  exit ${EXIT_CODE}
+  trap - 0 1 2 3 6 14 15
 }
+trap 'cleanup' 0 1 2 3 6 14 15
 ################################################################################
 ############################### MAIN ###########################################
 ################################################################################
@@ -2201,6 +749,16 @@ RunTestCases()
 ##########
 Header
 
+################################################
+# Need to update the loops for the image style #
+################################################
+UpdateLoopsForImage
+
+##################################
+# Get and print all version info #
+##################################
+GetLinterVersions
+
 #######################
 # Get GitHub Env Vars #
 #######################
@@ -2208,323 +766,203 @@ Header
 # needed to connect back and update checks
 GetGitHubVars
 
-#########################################
-# Get the languages we need to validate #
-#########################################
+########################################################
+# Initialize variables that depend on GitHub variables #
+########################################################
+DEFAULT_ANSIBLE_DIRECTORY="${GITHUB_WORKSPACE}/ansible"                               # Default Ansible Directory
+export DEFAULT_ANSIBLE_DIRECTORY                                                      # Workaround SC2034
+DEFAULT_TEST_CASE_ANSIBLE_DIRECTORY="${GITHUB_WORKSPACE}/${TEST_CASE_FOLDER}/ansible" # Default Ansible directory when running test cases
+export DEFAULT_TEST_CASE_ANSIBLE_DIRECTORY                                            # Workaround SC2034
+
+############################
+# Validate the environment #
+############################
 GetValidationInfo
+
+#################################
+# Get the linter rules location #
+#################################
+LinterRulesLocation
 
 ########################
 # Get the linter rules #
 ########################
-# Get YML rules
-GetLinterRules "$YAML_FILE_NAME" "$YAML_LINTER_RULES"
-# Get Markdown rules
-GetLinterRules "$MD_FILE_NAME" "$MD_LINTER_RULES"
-# Get Python rules
-GetLinterRules "$PYTHON_FILE_NAME" "$PYTHON_LINTER_RULES"
-# Get Ruby rules
-GetLinterRules "$RUBY_FILE_NAME" "$RUBY_LINTER_RULES"
-# Get Coffeescript rules
-GetLinterRules "$COFFEE_FILE_NAME" "$COFFEESCRIPT_LINTER_RULES"
-# Get Ansible rules
-GetLinterRules "$ANSIBLE_FILE_NAME" "$ANSIBLE_LINTER_RULES"
-# Get JavaScript rules
-GetLinterRules "$JAVASCRIPT_FILE_NAME" "$JAVASCRIPT_LINTER_RULES"
-# Get TypeScript rules
-GetLinterRules "$TYPESCRIPT_FILE_NAME" "$TYPESCRIPT_LINTER_RULES"
-# Get Golang rules
-GetLinterRules "$GO_FILE_NAME" "$GO_LINTER_RULES"
-# Get Docker rules
-GetLinterRules "$DOCKER_FILE_NAME" "$DOCKER_LINTER_RULES"
-# Get Terraform rules
-GetLinterRules "$TERRAFORM_FILE_NAME" "$TERRAFORM_LINTER_RULES"
-# Get PowerShell rules
-GetLinterRules "$POWERSHELL_FILE_NAME" "$POWERSHELL_LINTER_RULES"
-# Get CSS rules
-GetLinterRules "$CSS_FILE_NAME" "$CSS_LINTER_RULES"
+for LANGUAGE in "${LANGUAGE_ARRAY[@]}"; do
+  debug "Loading rules for ${LANGUAGE}..."
+  eval "GetLinterRules ${LANGUAGE} ${DEFAULT_RULES_LOCATION}"
+done
+
+# Load rules for a couple of special cases
+GetStandardRules "javascript"
+GetStandardRules "typescript"
+
+##########################
+# Define linter commands #
+##########################
+declare -A LINTER_COMMANDS_ARRAY
+LINTER_COMMANDS_ARRAY['ANSIBLE']="ansible-lint -v -c ${ANSIBLE_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['ARM']="Import-Module ${ARM_TTK_PSD1} ; \${config} = \$(Import-PowerShellDataFile -Path ${ARM_LINTER_RULES}) ; Test-AzTemplate @config -TemplatePath"
+LINTER_COMMANDS_ARRAY['BASH']="shellcheck --color --external-sources"
+LINTER_COMMANDS_ARRAY['BASH_EXEC']="bash-exec"
+LINTER_COMMANDS_ARRAY['CLOJURE']="clj-kondo --config ${CLOJURE_LINTER_RULES} --lint"
+LINTER_COMMANDS_ARRAY['CLOUDFORMATION']="cfn-lint --config-file ${CLOUDFORMATION_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['COFFEESCRIPT']="coffeelint -f ${COFFEESCRIPT_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['CPP']="cpplint"
+LINTER_COMMANDS_ARRAY['CSHARP']="dotnet-format --folder --check --exclude / --include"
+LINTER_COMMANDS_ARRAY['CSS']="stylelint --config ${CSS_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['DART']="dartanalyzer --fatal-infos --fatal-warnings --options ${DART_LINTER_RULES}"
+# NOTE: dockerfilelint's "-c" option expects the folder *containing* the DOCKER_LINTER_RULES file
+LINTER_COMMANDS_ARRAY['DOCKERFILE']="dockerfilelint -c $(dirname "${DOCKERFILE_LINTER_RULES}")"
+LINTER_COMMANDS_ARRAY['DOCKERFILE_HADOLINT']="hadolint -c ${DOCKERFILE_HADOLINT_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['EDITORCONFIG']="editorconfig-checker -config ${EDITORCONFIG_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['ENV']="dotenv-linter"
+LINTER_COMMANDS_ARRAY['GHERKIN']="gherkin-lint -c ${GHERKIN_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['GO']="golangci-lint run -c ${GO_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['GROOVY']="npm-groovy-lint -c ${GROOVY_LINTER_RULES} --failon warning"
+LINTER_COMMANDS_ARRAY['HTML']="htmlhint --config ${HTML_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['JAVA']="java -jar /usr/bin/checkstyle -c ${JAVA_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['JAVASCRIPT_ES']="eslint --no-eslintrc -c ${JAVASCRIPT_ES_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['JAVASCRIPT_STANDARD']="standard ${JAVASCRIPT_STANDARD_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['JAVASCRIPT_PRETTIER']="prettier --check"
+LINTER_COMMANDS_ARRAY['JSCPD']="jscpd --config ${JSCPD_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['JSON']="jsonlint"
+LINTER_COMMANDS_ARRAY['JSONC']="eslint --no-eslintrc -c ${JAVASCRIPT_ES_LINTER_RULES} --ext .json5,.jsonc"
+LINTER_COMMANDS_ARRAY['JSX']="eslint --no-eslintrc -c ${JSX_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['KOTLIN']="ktlint"
+if [ "${KUBERNETES_KUBEVAL_OPTIONS}" == "null" ] || [ -z "${KUBERNETES_KUBEVAL_OPTIONS}" ]; then
+  LINTER_COMMANDS_ARRAY['KUBERNETES_KUBEVAL']="kubeval --strict"
+else
+  LINTER_COMMANDS_ARRAY['KUBERNETES_KUBEVAL']="kubeval --strict ${KUBERNETES_KUBEVAL_OPTIONS}"
+fi
+LINTER_COMMANDS_ARRAY['LATEX']="chktex -q -l ${LATEX_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['LUA']="luacheck --config ${LUA_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['MARKDOWN']="markdownlint -c ${MARKDOWN_LINTER_RULES}"
+if [ -n "${MARKDOWN_CUSTOM_RULE_GLOBS}" ]; then
+  IFS="," read -r -a MARKDOWN_CUSTOM_RULE_GLOBS_ARRAY <<<"${MARKDOWN_CUSTOM_RULE_GLOBS}"
+  for glob in "${MARKDOWN_CUSTOM_RULE_GLOBS_ARRAY[@]}"; do
+    if [ -z "${LINTER_RULES_PATH}" ]; then
+      LINTER_COMMANDS_ARRAY['MARKDOWN']="${LINTER_COMMANDS_ARRAY['MARKDOWN']} -r ${GITHUB_WORKSPACE}/${glob}"
+    else
+      LINTER_COMMANDS_ARRAY['MARKDOWN']="${LINTER_COMMANDS_ARRAY['MARKDOWN']} -r ${GITHUB_WORKSPACE}/${LINTER_RULES_PATH}/${glob}"
+    fi
+  done
+fi
+LINTER_COMMANDS_ARRAY['OPENAPI']="spectral lint -r ${OPENAPI_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['PERL']="perlcritic"
+LINTER_COMMANDS_ARRAY['PHP_BUILTIN']="php -l -c ${PHP_BUILTIN_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['PHP_PHPCS']="phpcs --standard=${PHP_PHPCS_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['PHP_PHPSTAN']="phpstan analyse --no-progress --no-ansi --memory-limit 1G -c ${PHP_PHPSTAN_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['PHP_PSALM']="psalm --config=${PHP_PSALM_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['POWERSHELL']="Invoke-ScriptAnalyzer -EnableExit -Settings ${POWERSHELL_LINTER_RULES} -Path"
+LINTER_COMMANDS_ARRAY['PROTOBUF']="protolint lint --config_path ${PROTOBUF_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['PYTHON_BLACK']="black --config ${PYTHON_BLACK_LINTER_RULES} --diff --check"
+LINTER_COMMANDS_ARRAY['PYTHON_PYLINT']="pylint --rcfile ${PYTHON_PYLINT_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['PYTHON_FLAKE8']="flake8 --config=${PYTHON_FLAKE8_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['PYTHON_ISORT']="isort --check --diff --sp ${PYTHON_ISORT_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['PYTHON_MYPY']="mypy --config-file ${PYTHON_MYPY_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['R']="lintr"
+LINTER_COMMANDS_ARRAY['RAKU']="raku"
+LINTER_COMMANDS_ARRAY['RUBY']="rubocop -c ${RUBY_LINTER_RULES} --force-exclusion"
+LINTER_COMMANDS_ARRAY['RUST_2015']="rustfmt --check --edition 2015"
+LINTER_COMMANDS_ARRAY['RUST_2018']="rustfmt --check --edition 2018"
+LINTER_COMMANDS_ARRAY['RUST_CLIPPY']="clippy"
+LINTER_COMMANDS_ARRAY['SHELL_SHFMT']="shfmt -d"
+LINTER_COMMANDS_ARRAY['SNAKEMAKE_LINT']="snakemake --lint -s"
+LINTER_COMMANDS_ARRAY['SNAKEMAKE_SNAKEFMT']="snakefmt --config ${SNAKEMAKE_SNAKEFMT_LINTER_RULES} --check --compact-diff"
+LINTER_COMMANDS_ARRAY['STATES']="asl-validator --json-path"
+LINTER_COMMANDS_ARRAY['SQL']="sql-lint --config ${SQL_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['TEKTON']="tekton-lint"
+LINTER_COMMANDS_ARRAY['TERRAFORM']="tflint -c ${TERRAFORM_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['TERRAFORM_TERRASCAN']="terrascan scan -i terraform -t all -f"
+LINTER_COMMANDS_ARRAY['TERRAGRUNT']="terragrunt hclfmt --terragrunt-check --terragrunt-log-level error --terragrunt-hclfmt-file"
+LINTER_COMMANDS_ARRAY['TSX']="eslint --no-eslintrc -c ${TSX_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['TYPESCRIPT_ES']="eslint --no-eslintrc -c ${TYPESCRIPT_ES_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['TYPESCRIPT_STANDARD']="standard --parser @typescript-eslint/parser --plugin @typescript-eslint/eslint-plugin ${TYPESCRIPT_STANDARD_LINTER_RULES}"
+LINTER_COMMANDS_ARRAY['XML']="xmllint"
+LINTER_COMMANDS_ARRAY['YAML']="yamllint -c ${YAML_LINTER_RULES}"
+
+debug "--- Linter commands ---"
+debug "-----------------------"
+for i in "${!LINTER_COMMANDS_ARRAY[@]}"; do
+  debug "Linter key: $i, command: ${LINTER_COMMANDS_ARRAY[$i]}"
+done
+debug "---------------------------------------------"
 
 #################################
-# Check if were in verbose mode #
+# Check for SSL cert and update #
 #################################
-if [[ "$ACTIONS_RUNNER_DEBUG" == "true" ]]; then
-  ##################################
-  # Get and print all version info #
-  ##################################
-  GetLinterVersions
-fi
+CheckSSLCert
 
 ###########################################
-# Check to see if this is a test case run #
+# Build the list of files for each linter #
 ###########################################
-if [[ "$TEST_CASE_RUN" != "false" ]]; then
-  ###########################
-  # Run only the test cases #
-  ###########################
-  # Code will exit from inside this loop
-  RunTestCases
-fi
-
-#############################################
-# check flag for validation of all codebase #
-#############################################
-if [ "$VALIDATE_ALL_CODEBASE" == "false" ]; then
-  ########################################
-  # Get list of files changed if env set #
-  ########################################
-  BuildFileList
-fi
+BuildFileList "${VALIDATE_ALL_CODEBASE}" "${TEST_CASE_RUN}" "${ANSIBLE_DIRECTORY}"
 
 ###############
-# YML LINTING #
+# Run linters #
 ###############
-if [ "$VALIDATE_YAML" == "true" ]; then
-  ######################
-  # Lint the Yml Files #
-  ######################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "YML" "yamllint" "yamllint -c $YAML_LINTER_RULES" ".*\.\(yml\|yaml\)\$" "${FILE_ARRAY_YML[@]}"
-fi
+EDITORCONFIG_FILE_PATH="${GITHUB_WORKSPACE}"/.editorconfig
 
-################
-# JSON LINTING #
-################
-if [ "$VALIDATE_JSON" == "true" ]; then
-  #######################
-  # Lint the json files #
-  #######################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "JSON" "jsonlint" "jsonlint" ".*\.\(json\)\$" "${FILE_ARRAY_JSON[@]}"
-fi
+####################################
+# Print ENV before running linters #
+####################################
+debug "--- ENV (before running linters) ---"
+debug "------------------------------------"
+PRINTENV=$(printenv | sort)
+debug "ENV:"
+debug "${PRINTENV}"
+debug "------------------------------------"
 
-###############
-# XML LINTING #
-###############
-if [ "$VALIDATE_XML" == "true" ]; then
-  ######################
-  # Lint the XML Files #
-  ######################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "XML" "xmllint" "xmllint" ".*\.\(xml\)\$" "${FILE_ARRAY_XML[@]}"
-fi
+for LANGUAGE in "${LANGUAGE_ARRAY[@]}"; do
+  debug "Running linter for the ${LANGUAGE} language..."
+  VALIDATE_LANGUAGE_VARIABLE_NAME="VALIDATE_${LANGUAGE}"
+  debug "Setting VALIDATE_LANGUAGE_VARIABLE_NAME to ${VALIDATE_LANGUAGE_VARIABLE_NAME}..."
+  VALIDATE_LANGUAGE_VARIABLE_VALUE="${!VALIDATE_LANGUAGE_VARIABLE_NAME}"
+  debug "Setting VALIDATE_LANGUAGE_VARIABLE_VALUE to ${VALIDATE_LANGUAGE_VARIABLE_VALUE}..."
 
-####################
-# MARKDOWN LINTING #
-####################
-if [ "$VALIDATE_MD" == "true" ]; then
-  ###########################
-  # Lint the Markdown Files #
-  ###########################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "MARKDOWN" "markdownlint" "markdownlint -c $MD_LINTER_RULES" ".*\.\(md\)\$" "${FILE_ARRAY_MD[@]}"
-fi
+  if [ "${VALIDATE_LANGUAGE_VARIABLE_VALUE}" = "true" ]; then
+    # Check if we need an .editorconfig file
+    # shellcheck disable=SC2153
+    if [ "${LANGUAGE}" = "EDITORCONFIG" ] || [ "${LANGUAGE}" = "SHELL_SHFMT" ]; then
+      if [ -e "${EDITORCONFIG_FILE_PATH}" ]; then
+        debug "Found an EditorConfig file at ${EDITORCONFIG_FILE_PATH}"
+      else
+        debug "No .editorconfig found at: $EDITORCONFIG_FILE_PATH. Skipping ${LANGUAGE} linting..."
+        continue
+      fi
+    elif [ "${LANGUAGE}" = "R" ] && [ ! -f "${GITHUB_WORKSPACE}/.lintr" ] && ((${#FILE_ARRAY_R[@]})); then
+      info "No .lintr configuration file found, using defaults."
+      cp "$R_LINTER_RULES" "$GITHUB_WORKSPACE"
+    # Check if there's local configuration for the Raku linter
+    elif [ "${LANGUAGE}" = "RAKU" ] && [ -e "${GITHUB_WORKSPACE}/META6.json" ]; then
+      cd "${GITHUB_WORKSPACE}" && zef install --deps-only --/test .
+    fi
 
-################
-# BASH LINTING #
-################
-if [ "$VALIDATE_BASH" == "true" ]; then
-  #######################
-  # Lint the bash files #
-  #######################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "BASH" "shellcheck" "shellcheck" ".*\.\(sh\)\$" "${FILE_ARRAY_BASH[@]}"
-fi
+    LINTER_NAME="${LINTER_NAMES_ARRAY["${LANGUAGE}"]}"
+    if [ -z "${LINTER_NAME}" ]; then
+      fatal "Cannot find the linter name for ${LANGUAGE} language."
+    else
+      debug "Setting LINTER_NAME to ${LINTER_NAME}..."
+    fi
 
-##################
-# PYTHON LINTING #
-##################
-if [ "$VALIDATE_PYTHON" == "true" ]; then
-  #########################
-  # Lint the python files #
-  #########################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "PYTHON" "pylint" "pylint --rcfile $PYTHON_LINTER_RULES -E" ".*\.\(py\)\$" "${FILE_ARRAY_PYTHON[@]}"
-fi
+    LINTER_COMMAND="${LINTER_COMMANDS_ARRAY["${LANGUAGE}"]}"
+    if [ -z "${LINTER_COMMAND}" ]; then
+      fatal "Cannot find the linter command for ${LANGUAGE} language."
+    else
+      debug "Setting LINTER_COMMAND to ${LINTER_COMMAND}..."
+    fi
 
-################
-# PERL LINTING #
-################
-if [ "$VALIDATE_PERL" == "true" ]; then
-  #######################
-  # Lint the perl files #
-  #######################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "PERL" "perl" "perl -Mstrict -cw" ".*\.\(pl\)\$" "${FILE_ARRAY_PERL[@]}"
-fi
+    FILE_ARRAY_VARIABLE_NAME="FILE_ARRAY_${LANGUAGE}"
+    debug "Setting FILE_ARRAY_VARIABLE_NAME to ${FILE_ARRAY_VARIABLE_NAME}..."
 
-################
-# PHP LINTING #
-################
-if [ "$VALIDATE_PHP" == "true" ]; then
-  #######################
-  # Lint the PHP files #
-  #######################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "PHP" "php" "php -l" ".*\.\(php\)\$" "${FILE_ARRAY_PHP[@]}"
-fi
+    # shellcheck disable=SC2125
+    LANGUAGE_FILE_ARRAY="${FILE_ARRAY_VARIABLE_NAME}"[@]
+    debug "${FILE_ARRAY_VARIABLE_NAME} file array contents: ${!LANGUAGE_FILE_ARRAY}"
 
-################
-# RUBY LINTING #
-################
-if [ "$VALIDATE_RUBY" == "true" ]; then
-  #######################
-  # Lint the ruby files #
-  #######################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "RUBY" "rubocop" "rubocop -c $RUBY_LINTER_RULES" ".*\.\(rb\)\$" "${FILE_ARRAY_RUBY[@]}"
-fi
-
-########################
-# COFFEESCRIPT LINTING #
-########################
-if [ "$VALIDATE_COFFEE" == "true" ]; then
-  #########################
-  # Lint the coffee files #
-  #########################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "COFFEESCRIPT" "coffeelint" "coffeelint -f $COFFEESCRIPT_LINTER_RULES" ".*\.\(coffee\)\$" "${FILE_ARRAY_COFFEESCRIPT[@]}"
-fi
-
-##################
-# GOLANG LINTING #
-##################
-if [ "$VALIDATE_GO" == "true" ]; then
-  #########################
-  # Lint the golang files #
-  #########################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "GO" "golangci-lint" "golangci-lint run -c $GO_LINTER_RULES" ".*\.\(go\)\$" "${FILE_ARRAY_GO[@]}"
-fi
-
-#####################
-# TERRAFORM LINTING #
-#####################
-if [ "$VALIDATE_TERRAFORM" == "true" ]; then
-  ############################
-  # Lint the Terraform files #
-  ############################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "TERRAFORM" "tflint" "tflint -c $TERRAFORM_LINTER_RULES" ".*\.\(tf\)\$" "${FILE_ARRAY_TERRAFORM[@]}"
-fi
-
-###################
-# ANSIBLE LINTING #
-###################
-if [ "$VALIDATE_ANSIBLE" == "true" ]; then
-  ##########################
-  # Lint the Ansible files #
-  ##########################
-  # Due to the nature of how we want to validate Ansible, we cannot use the
-  # standard loop, since it looks for an ansible folder, excludes certain
-  # files, and looks for additional changes, it should be an outlier
-  LintAnsibleFiles
-fi
-
-######################
-# JAVASCRIPT LINTING #
-######################
-if [ "$VALIDATE_JAVASCRIPT_ES" == "true" ]; then
-  #############################
-  # Lint the Javascript files #
-  #############################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "JAVASCRIPT_ES" "eslint" "eslint --no-eslintrc -c $JAVASCRIPT_LINTER_RULES" ".*\.\(js\)\$" "${FILE_ARRAY_JAVASCRIPT_ES[@]}"
-fi
-
-######################
-# JAVASCRIPT LINTING #
-######################
-if [ "$VALIDATE_JAVASCRIPT_STANDARD" == "true" ]; then
-  #################################
-  # Get Javascript standard rules #
-  #################################
-  GetStandardRules "javascript"
-  #############################
-  # Lint the Javascript files #
-  #############################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "JAVASCRIPT_STANDARD" "standard" "standard $JAVASCRIPT_STANDARD_LINTER_RULES" ".*\.\(js\)\$" "${FILE_ARRAY_JAVASCRIPT_STANDARD[@]}"
-fi
-
-######################
-# TYPESCRIPT LINTING #
-######################
-if [ "$VALIDATE_TYPESCRIPT_ES" == "true" ]; then
-  #############################
-  # Lint the Typescript files #
-  #############################
-  LintCodebase "TYPESCRIPT_ES" "eslint" "eslint --no-eslintrc -c $TYPESCRIPT_LINTER_RULES" ".*\.\(ts\)\$" "${FILE_ARRAY_TYPESCRIPT_ES[@]}"
-fi
-######################
-# TYPESCRIPT LINTING #
-######################
-if [ "$VALIDATE_TYPESCRIPT_STANDARD" == "true" ]; then
-  #################################
-  # Get Typescript standard rules #
-  #################################
-  GetStandardRules "typescript"
-  #############################
-  # Lint the Typescript files #
-  #############################
-  LintCodebase "TYPESCRIPT_STANDARD" "standard" "standard --parser @typescript-eslint/parser --plugin @typescript-eslint/eslint-plugin $TYPESCRIPT_STANDARD_LINTER_RULES" ".*\.\(ts\)\$" "${FILE_ARRAY_TYPESCRIPT_STANDARD[@]}"
-fi
-
-###############
-# CSS LINTING #
-###############
-if [ "$VALIDATE_CSS" == "true" ]; then
-  #################################
-  # Get CSS standard rules #
-  #################################
-  GetStandardRules "stylelint"
-  #############################
-  # Lint the CSS files #
-  #############################
-  LintCodebase "CSS" "stylelint" "stylelint --config $CSS_LINTER_RULES" ".*\.\(css\)\$" "${FILE_ARRAY_CSS[@]}"
-fi
-
-###############
-# ENV LINTING #
-###############
-if [ "$VALIDATE_ENV" == "true" ]; then
-  #######################
-  # Lint the env files #
-  #######################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "ENV" "dotenv-linter" "dotenv-linter" ".*\.\(env\).*\$" "${FILE_ARRAY_ENV[@]}"
-fi
-
-##################
-# KOTLIN LINTING #
-##################
-if [ "$VALIDATE_KOTLIN" == "true" ]; then
-  #######################
-  # Lint the Kotlin files #
-  #######################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "KOTLIN" "ktlint" "ktlint" ".*\.\(kt\|kts\)\$" "${FILE_ARRAY_ENV[@]}"
-fi
-
-##################
-# DOCKER LINTING #
-##################
-if [ "$VALIDATE_DOCKER" == "true" ]; then
-  #########################
-  # Lint the docker files #
-  #########################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "DOCKER" "/dockerfilelint/bin/dockerfilelint" "/dockerfilelint/bin/dockerfilelint" ".*\(Dockerfile\)\$" "${FILE_ARRAY_DOCKER[@]}"
-fi
-
-######################
-# POWERSHELL LINTING #
-######################
-if [ "$VALIDATE_POWERSHELL" == "true" ]; then
-  #############################
-  # Lint the powershell files #
-  #############################
-  # LintCodebase "FILE_TYPE" "LINTER_NAME" "LINTER_CMD" "FILE_TYPES_REGEX" "FILE_ARRAY"
-  LintCodebase "POWERSHELL" "pwsh" "pwsh -c Invoke-ScriptAnalyzer -EnableExit -Settings $POWERSHELL_LINTER_RULES -Path" ".*\.\(ps1\|psm1\|psd1\|ps1xml\|pssc\|psrc\|cdxml\)\$" "${FILE_ARRAY_POWERSHELL[@]}"
-fi
+    debug "Invoking ${LINTER_NAME} linter. TEST_CASE_RUN: ${TEST_CASE_RUN}"
+    LintCodebase "${LANGUAGE}" "${LINTER_NAME}" "${LINTER_COMMAND}" "${FILTER_REGEX_INCLUDE}" "${FILTER_REGEX_EXCLUDE}" "${TEST_CASE_RUN}" "${!LANGUAGE_FILE_ARRAY}"
+  fi
+done
 
 ##########
 # Footer #

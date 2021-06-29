@@ -1,11 +1,14 @@
 # Contributing
+
 :wave: Hi there!
 We're thrilled that you'd like to contribute to this project. Your help is essential for keeping it great.
 
 ## Submitting a pull request
+
 [Pull Requests][pulls] are used for adding new playbooks, roles, and documents to the repository, or editing the existing ones.
 
 **With write access**
+
 1. Clone the repository (only if you have write access)
 1. Create a new branch: `git checkout -b my-branch-name`
 1. Make your change
@@ -13,6 +16,7 @@ We're thrilled that you'd like to contribute to this project. Your help is essen
 1. Pat yourself on the back and wait for your pull request to be reviewed and merged.
 
 **Without write access**
+
 1. [Fork][fork] and clone the repository
 1. Create a new branch: `git checkout -b my-branch-name`
 1. Make your change
@@ -29,15 +33,31 @@ Draft pull requests are also welcome to get feedback early on, or if there is so
 - Create a branch with a name that identifies the user and nature of the changes (similar to `user/branch-purpose`)
 - Open a pull request
 
+### CI/CT/CD
+
+The **Super-Linter** has _CI/CT/CD_ configured utilizing **GitHub** Actions.
+
+- When a branch is created and code is pushed, a **GitHub** Action is triggered for building the new **Docker** container with the new codebase
+- The **Docker** container is then ran against the _test cases_ to validate all code sanity
+  - `.automation/test` contains all test cases for each language that should be validated
+- These **GitHub** Actions utilize the Checks API and Protected Branches to help follow the SDLC
+- When the Pull Request is merged to master, the **Super-Linter** **Docker** container is then updated and deployed with the new codebase
+  - **Note:** The branch's **Docker** container is also removed from **DockerHub** to cleanup after itself
+
 ## Releasing
-If you are the current maintainer of this action:
-1. Update `README.md` and the wiki to reflect new version number in the example workflow file sections
-2. Draft [Release](https://help.github.com/en/github/administering-a-repository/managing-releases-in-a-repository) with a summarized changelog
-3. Publish the docker image to GitHub package registry
-4. Publish the docker image to Docker Hub
-5. Look for approval from [CODEOWNERS](https://help.github.com/en/github/creating-cloning-and-archiving-repositories/about-code-owners)
+
+If you are the current maintainer of this action you can create releases from [a release issue](.github/ISSUE_TEMPLATE/CREATE_RELEASE.md) in the repository.
+
+- It will notify the issue it has seen the information and starts the Actions job
+- It will create a branch and update the `actions.yml` with the new version supplied to the issue
+- It will then create a PR with the updated code
+- It will then create the release and build the artifacts needed
+- it will then publish the release and merge the PR
+- A GitHub Action will Publish the Docker image to GitHub Package Registry once a Release is created
+- A GitHub Action will Publish the Docker image to Docker Hub once a Release is created
 
 ## Resources
+
 - [How to Contribute to Open Source](https://opensource.guide/how-to-contribute/)
 - [Using Pull Requests](https://help.github.com/articles/about-pull-requests/)
 - [GitHub Help](https://help.github.com)
